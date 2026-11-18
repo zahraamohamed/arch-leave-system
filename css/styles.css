@@ -392,6 +392,8 @@ tr.wrow td { background: #fbfaff; }
 .calc-row { display: grid; grid-template-columns: 150px 140px 140px 70px 1fr 32px; gap: 8px; margin-bottom: 8px; align-items: center; padding: 8px; border-radius: 10px; background: #fafbfc; border: 1px solid var(--line-2); border-inline-start: 3px solid var(--navy); }
 .calc-row.eff-sick { border-inline-start-color: #1d4ed8; }
 .calc-row.eff-pause { border-inline-start-color: #7a5af5; background: #fbfaff; }
+.calc-row.eff-absence { border-inline-start-color: var(--warn); background: #fffbf3; }
+.calc-row .calc-mode { font-size: 13px; padding: 0 6px; }
 .calc-row input, .calc-row select { height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--surface); width: 100%; min-width: 0; }
 .calc-days { font-size: 13px; color: var(--ink-2); font-weight: 600; white-space: nowrap; }
 .calc-help { margin: 10px 0 0; padding-inline-start: 18px; line-height: 1.8; }

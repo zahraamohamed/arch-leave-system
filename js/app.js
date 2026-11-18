@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181300";
-import { COLLEGE } from "./config.js?v=202611181300";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181300";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181300";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181300";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181300";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181315";
+import { COLLEGE } from "./config.js?v=202611181315";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181315";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181315";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181315";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181315";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -33,14 +33,15 @@ const ruleText = (cat) => {
 };
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
 
-const newCalcRow = (type = "ordinary") => ({ type, from: "", to: "", days: "", hours: "", note: "" });
+const newCalcRow = (type = "ordinary") => ({ type, from: "", to: "", days: "", hours: "", note: "", mode: "pause" });
 const CALC_TYPES = {
   ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct" },
   hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct" },
   sick:      { name: "مرضية",                    input: "days",   effect: "sick" },
   maternity: { name: "أمومة",                    input: "period", effect: "pause" },
   unpaid:    { name: "بدون راتب",                input: "period", effect: "pause" },
-  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" }
+  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" },
+  absence:   { name: "غياب",                     input: "absence", effect: "absence" }
 };
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
@@ -528,6 +529,7 @@ function calcView() {
         <ul class="muted small calc-help">
           <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
           <li><b>مرضية:</b> تنخصم من الرصيد المرضي.</li>
+          <li><b>غياب:</b> أيامه توقف الاستحقاق، أو اختر "يُخصم من الرصيد" بالسطر إذا تنخصم من الإجازات.</li>
           <li><b>أمومة، بدون راتب، طويلة:</b> ما تنخصم، بس أيامها توقف الاستحقاق. إذا قطعها، اكتب تاريخ رجوعه الفعلي كتاريخ نهاية.</li>
         </ul>
       </form>
@@ -539,7 +541,9 @@ function calcRows() {
   return ui.calc.rows.map((r, i) => {
     const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
     const pd = periodDays(r.from, r.to);
-    const field = t.input === "period"
+    const field = t.input === "absence"
+      ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="أيام الغياب" value="${esc(r.days)}"><select data-k="mode" class="calc-mode" title="شلون ينحسب الغياب"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>يُخصم من الرصيد</option></select>`
+      : t.input === "period"
       ? `<input type="date" data-k="from" value="${esc(r.from)}" title="من"><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}" title="إلى (تاريخ الرجوع الفعلي إذا قطعها)"><span class="calc-days">${pd ? `${pd} يوم` : "—"}</span>`
       : t.input === "hours"
         ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="hours" min="0" step="0.5" placeholder="الساعات" value="${esc(r.hours)}"><span class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</span>`
@@ -556,19 +560,23 @@ function calcRows() {
 function calcData() {
   const c = ui.calc, rows = c.rows;
   const periods = rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").map((r) => ({ from: r.from, to: r.to }));
-  const paused = pausedDays(periods, c.start, c.asOf);
+  const absRows = rows.filter((r) => r.type === "absence");
+  const absPause = round2(absRows.filter((r) => r.mode !== "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const absDeduct = round2(absRows.filter((r) => r.mode === "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const paused = pausedDays(periods, c.start, c.asOf) + absPause;
   const ent = serviceEntitlement({ start: c.start, asOf: c.asOf, category: c.category, rules: R(), paused });
   if (!ent) return null;
   const hpd = R().hoursPerDay;
   const takenDays = round2(rows.filter((r) => r.type === "ordinary").reduce((a, r) => a + (Number(r.days) || 0), 0));
   const takenHours = round2(rows.filter((r) => r.type === "hourly").reduce((a, r) => a + (Number(r.hours) || 0), 0));
-  const taken = round2(takenDays + takenHours / hpd);
+  const taken = round2(takenDays + takenHours / hpd + absDeduct);
   const sickTaken = round2(rows.filter((r) => r.type === "sick").reduce((a, r) => a + (Number(r.days) || 0), 0));
   const byType = {};
   rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").forEach((r) => { byType[r.type] = (byType[r.type] || 0) + periodDays(r.from, r.to); });
+  if (absPause) byType.absence = absPause;
   const raw = round2(ent.ordinary - taken);
   const final = ent.cap > 0 && raw > ent.cap ? ent.cap : raw;
-  return { ...ent, takenDays, takenHours, taken, raw, final, sickTaken, sickLeft: round2(ent.sick - sickTaken), byType };
+  return { ...ent, takenDays, takenHours, absDeduct, taken, raw, final, sickTaken, sickLeft: round2(ent.sick - sickTaken), byType };
 }
 
 function calcResult() {
@@ -585,6 +593,7 @@ function calcResult() {
         <div><dt>الخدمة المحتسبة</dt><dd>${d.effDays} يوم</dd></div>` : ""}
       <div><dt>المستحق الاعتيادي</dt><dd>${days(d.ordinary)}</dd></div>
       ${d.takenDays ? `<div><dt>اعتيادية مأخوذة</dt><dd class="neg">− ${days(d.takenDays)}</dd></div>` : ""}
+      ${d.absDeduct ? `<div><dt>غياب مخصوم</dt><dd class="neg">− ${days(d.absDeduct)}</dd></div>` : ""}
       ${d.takenHours ? `<div><dt>زمنية مأخوذة</dt><dd class="neg">− ${num(d.takenHours)} ساعة = ${days(round2(d.takenHours / R().hoursPerDay))}</dd></div>` : ""}
     </dl>
     <div class="sum-bal"><span>الرصيد الاعتيادي المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم</em></div>
