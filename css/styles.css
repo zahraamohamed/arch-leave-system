@@ -388,3 +388,9 @@ tr.wrow td { background: #fbfaff; }
 .danger-zone { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .danger-txt { color: var(--bad) !important; }
 .card.archived { margin-top: 20px; }
+
+.calc-row { display: grid; grid-template-columns: 150px 100px 1fr 32px; gap: 8px; margin-bottom: 8px; align-items: center; }
+.calc-row input { height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--surface); width: 100%; }
+.calc-apply { border-top: 1px solid var(--line-2); padding-top: 12px; margin-top: 8px; }
+@media (max-width: 600px) { .calc-row { grid-template-columns: 1fr 90px 32px; } .calc-row [data-k=note] { grid-column: 1 / -1; grid-row: 2; } }
+@media print { body.calc-page .req-grid { display: block; } body.calc-page #calcForm { display: none; } body.calc-page .calc-sheet { border: 0; box-shadow: none; position: static; } }

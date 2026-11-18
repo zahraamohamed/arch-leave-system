@@ -148,3 +148,25 @@ export function accrualFor(emp, rules, target = monthKey()) {
   const label = c.accrual === "monthly" ? `استحقاق لغاية ${target}` : (labels.join(" · ") || `تحديث ${target}`);
   return { target, balance: newB, dBalance: round2(newB - bal), sick: round2(sick + addS), dSick: addS, label };
 }
+
+// حاسبة الاستحقاق من تاريخ المباشرة
+//  الموظف: يوم عن كل 10 أيام خدمة (م43)، والرصيد المتراكم لا يتجاوز الحد (180)
+//  التدريسي: 15 يوم عن كل سنة دراسية (م10) — تُحسب نسبياً حسب أشهر الخدمة
+//  المرضية: 30 يوم عن كل سنة خدمة كاملة (م46)
+export function serviceEntitlement({ start, asOf, category, rules }) {
+  if (!start || !asOf) return null;
+  const s = new Date(start + "T00:00:00"), e = new Date(asOf + "T00:00:00");
+  if (e < s) return null;
+  const days = Math.round((e - s) / 86400000) + 1;
+  let months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  if (e.getDate() < s.getDate()) months--;
+  months = Math.max(0, months);
+  const years = Math.floor(months / 12);
+  const c = rules.categories[category] || {};
+  const ordinary = category === "staff" ? round2(days / 10) : round2((c.amount || 15) * months / 12);
+  return {
+    days, months, years, remMonths: months % 12,
+    ordinary, cap: c.max || 0,
+    sick: years * (rules.sickAnnual || 30)
+  };
+}

@@ -1,8 +1,8 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181225";
-import { COLLEGE } from "./config.js?v=202611181225";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear } from "./rules.js?v=202611181225";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181225";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181225";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181246";
+import { COLLEGE } from "./config.js?v=202611181246";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement } from "./rules.js?v=202611181246";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181246";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181246";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -32,7 +32,7 @@ const ruleText = (cat) => {
 };
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
 
-const ui = { empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
+const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", rows: [{ date: "", days: "", note: "" }] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
 function logoHTML(size = 44, full = false) {
@@ -49,6 +49,7 @@ function shell(content, active) {
     ["employees", "المنتسبون", "users"],
     ["forms", "الاستمارات", "file-badge"],
     ["requests", "سجل الطلبات", "history"],
+    isSuper() && ["calc", "حاسبة الرصيد", "calculator"],
     isSuper() && ["settings", "الإعدادات", "settings"]
   ].filter(Boolean);
   const u = S().user;
@@ -488,6 +489,75 @@ function formView(id) {
     </article>`, "forms");
 }
 
+
+/* ----------------------------- calculator ----------------------------- */
+function calcView() {
+  const c = ui.calc;
+  if (!c.asOf) c.asOf = today();
+  const emps = S().employees.filter((e) => e.active !== false).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  return shell(`
+    ${pageHead("حاسبة الرصيد من تاريخ المباشرة", "تحسب الإجازات المستحقة من تاريخ المباشرة لغاية اليوم، ثم تستقطع الإجازات المأخوذة. ما تغيّر شي بالنظام إلا إذا ضغطت اعتماد.", `<button class="btn" data-act="print"><i data-lucide="printer"></i>طباعة</button>`)}
+    <div class="grid-2 req-grid">
+      <form class="card form" id="calcForm" onsubmit="return false">
+        <div class="step"><span>1</span>المنتسب وتاريخ المباشرة</div>
+        <label>منتسب مسجل (اختياري)<select name="empId"><option value="">— حساب حر بدون منتسب —</option>${emps.map((e) => `<option value="${e.id}" ${c.empId === e.id ? "selected" : ""}>${esc(e.name)} · ${CATEGORIES[e.category]}</option>`).join("")}</select></label>
+        <div class="row">
+          <label>الصنف<select name="category">${Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}" ${c.category === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+          <label>تاريخ المباشرة<input type="date" name="start" value="${esc(c.start)}" required></label>
+          <label>لغاية تاريخ<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
+        </div>
+        <div class="step"><span>2</span>الإجازات الاعتيادية المأخوذة</div>
+        <div id="calcRows">${calcRows()}</div>
+        <button type="button" class="btn sm" data-act="calc-add-row"><i data-lucide="plus"></i>إضافة إجازة</button>
+        <p class="muted small">اكتب كل إجازة بسطر، أو اكتب المجموع كله بسطر واحد. الإجازات بدون راتب والمرضية لا تُكتب هنا.</p>
+      </form>
+      <aside class="card summary calc-sheet" id="calcResult">${calcResult()}</aside>
+    </div>`, "calc");
+}
+
+function calcRows() {
+  return ui.calc.rows.map((r, i) => `
+    <div class="calc-row" data-i="${i}">
+      <input type="date" data-k="date" value="${esc(r.date)}" title="تاريخ الإجازة (اختياري)">
+      <input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}">
+      <input type="text" data-k="note" placeholder="ملاحظة (اختياري)" value="${esc(r.note)}">
+      <button type="button" class="icon-btn" data-act="calc-del-row" data-id="${i}" title="حذف"><i data-lucide="x"></i></button>
+    </div>`).join("");
+}
+
+function calcData() {
+  const c = ui.calc;
+  const ent = serviceEntitlement({ start: c.start, asOf: c.asOf, category: c.category, rules: R() });
+  if (!ent) return null;
+  const taken = round2(c.rows.reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const raw = round2(ent.ordinary - taken);
+  const capped = ent.cap > 0 && raw > ent.cap ? ent.cap : raw;
+  return { ...ent, taken, raw, final: capped };
+}
+
+function calcResult() {
+  const c = ui.calc, d = calcData(), e = empById(c.empId);
+  if (!d) return `<div class="sum-empty"><i data-lucide="calendar-range"></i><p>اختر تاريخ المباشرة حتى تطلع النتيجة.</p></div>`;
+  const rule = c.category === "staff" ? "يوم عن كل 10 أيام خدمة (قانون الخدمة المدنية م43)" : `${num(R().categories.teaching.amount)} يوم لكل سنة دراسية، محسوبة نسبياً حسب الأشهر (قانون الخدمة الجامعية م10)`;
+  return `
+    <div class="sum-who"><b>${e ? esc(e.name) : "حساب حر"}</b><span>${CATEGORIES[c.category]} · مباشرة ${fmtDate(c.start)} ← ${fmtDate(c.asOf)}</span></div>
+    <dl class="sum-dl">
+      <div><dt>مدة الخدمة</dt><dd>${d.years} سنة و ${d.remMonths} شهر <small class="muted">(${d.days} يوم)</small></dd></div>
+      <div><dt>الاستحقاق الاعتيادي</dt><dd>${days(d.ordinary)}</dd></div>
+      <div><dt>المأخوذ</dt><dd class="neg">− ${days(d.taken)}</dd></div>
+    </dl>
+    <div class="sum-bal"><span>الرصيد المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم اعتيادي</em></div>
+    ${d.final !== d.raw ? `<div class="note warn">الناتج ${days(d.raw)} لكن الحد الأعلى للتراكم ${d.cap} يوم (م43/3)، فالرصيد ${days(d.final)}.</div>` : ""}
+    ${d.final < 0 ? `<div class="note warn">المأخوذ أكثر من المستحق بـ ${days(-d.final)} — هذه الأيام تُعامل بدون راتب.</div>` : ""}
+    <dl class="sum-dl"><div><dt>الاستحقاق المرضي</dt><dd>${days(d.sick)} <small class="muted">(30 عن كل سنة كاملة — م46)</small></dd></div></dl>
+    <p class="muted small">طريقة الاحتساب: ${rule}.</p>
+    ${e ? `<div class="calc-apply noprint">
+        <p class="small">رصيد ${esc(e.name)} الحالي بالنظام: <b>${days(e.balance)}</b></p>
+        <button type="button" class="btn primary block" data-act="calc-apply" ${d.final === round2(e.balance) ? "disabled" : ""}><i data-lucide="check"></i>اعتماد ${days(Math.max(0, d.final))} كرصيد اعتيادي</button>
+      </div>` : ""}`;
+}
+function refreshCalc() { const r = $("#calcResult"); if (r) { r.innerHTML = calcResult(); icons(); } }
+
 /* ----------------------------- settings ----------------------------- */
 function settingsView() {
   const s = S().settings, r = s.rules, c = r.categories;
@@ -696,6 +766,16 @@ document.addEventListener("click", async (ev) => {
         else if (p === "unsupported") toast("هذا المتصفح لا يدعم الإشعارات — على الآيفون أضف الموقع للشاشة الرئيسية أولاً", "bad");
         render(); break;
       }
+      case "calc-add-row": ui.calc.rows.push({ date: "", days: "", note: "" }); $("#calcRows").innerHTML = calcRows(); icons(); $("#calcRows .calc-row:last-child [data-k=days]").focus(); break;
+      case "calc-del-row": ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push({ date: "", days: "", note: "" }); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
+      case "calc-apply": {
+        const d = calcData(), e = empById(ui.calc.empId);
+        const target = Math.max(0, d.final), delta = round2(target - (e.balance || 0));
+        if (!delta) break;
+        if (!confirm(`تحديد الرصيد الاعتيادي لـ ${e.name} إلى ${target} يوم (بدل ${num(e.balance)})؟\nينسجل بحركة الرصيد.`)) break;
+        await store.adjustBalance(e.id, "balance", delta, `احتساب من تاريخ المباشرة ${fmtDate(ui.calc.start)}: مستحق ${d.ordinary} − مأخوذ ${d.taken}`);
+        toast("تم اعتماد الرصيد"); refreshCalc(); break;
+      }
       case "add-emp": employeeModal(); break;
       case "edit-emp": employeeModal(empById(id)); break;
       case "adjust": adjustModal(id); break;
@@ -732,10 +812,22 @@ document.addEventListener("input", (ev) => {
   const t = ev.target;
   if (t.id === "empSearch") { ui.empSearch = t.value; $("#empTable").innerHTML = employeeTable(); }
   if (t.id === "reqSearch") { ui.reqFilter.q = t.value.trim(); $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
+  if (t.closest && t.closest("#calcForm")) {
+    const row = t.closest(".calc-row");
+    if (row) ui.calc.rows[Number(row.dataset.i)][t.dataset.k] = t.value;
+    else if (t.name && t.name !== "empId") ui.calc[t.name] = t.value;
+    refreshCalc();
+  }
   if (t.id === "formsSearch") { ui.formsQ = t.value; $("#formsList").innerHTML = formsList(); }
 });
 document.addEventListener("change", async (ev) => {
   const t = ev.target;
+  if (t.name === "empId" && t.closest("#calcForm")) {
+    ui.calc.empId = t.value;
+    const e = empById(t.value);
+    if (e) { ui.calc.category = e.category; t.form.category.value = e.category; }
+    refreshCalc();
+  }
   if (t.dataset.f) { ui.reqFilter[t.dataset.f] = t.value; $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
   if (t.id === "logoFile" && t.files[0]) { try { await store.saveSettings({ logo: await fileToLogo(t.files[0]) }); toast("تم حفظ الشعار"); } catch (e) { toast(e.message, "bad"); } }
 });
@@ -771,11 +863,13 @@ function render() {
   const views = {
     dashboard, employees: employeesView, employee: () => employeeView(arg), inbox: inboxView, requests: requestsView,
     forms: formsView, form: () => formView(arg),
-    new: () => (isAdmin() ? newRequestView(params) : inboxView()), settings: () => (isSuper() ? settingsView() : dashboard())
+    new: () => (isAdmin() ? newRequestView(params) : inboxView()), settings: () => (isSuper() ? settingsView() : dashboard()),
+    calc: () => (isSuper() ? calcView() : dashboard())
   };
   const y = window.scrollY;
   app.innerHTML = (views[page] || dashboard)();
   document.body.classList.toggle("form-page", page === "form");
+  document.body.classList.toggle("calc-page", page === "calc");
   window.scrollTo(0, y);
   if (page === "new") wireNewRequest();
   if (page === "employee") fillLedger(arg);
@@ -820,6 +914,7 @@ subscribe(() => {
   if (document.querySelector(".modal-bg")) return;
   if (location.hash.startsWith("#/new") && $("#reqForm")) { clearTimeout(timer); timer = setTimeout(refreshSummary, 30); return; }
   const a = document.activeElement;
+  if (location.hash.startsWith("#/calc") && $("#calcForm")) { clearTimeout(timer); timer = setTimeout(refreshCalc, 30); return; }
   if (a && ["empSearch", "reqSearch", "formsSearch"].includes(a.id)) { if ($("#empTable")) $("#empTable").innerHTML = employeeTable(); return; }
   clearTimeout(timer); timer = setTimeout(render, 30);
 });
