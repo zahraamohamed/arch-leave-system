@@ -165,14 +165,17 @@ function employeeTable() {
 
 /* ---------------------------- employees ---------------------------- */
 function employeesView() {
+  const archived = S().employees.filter((e) => e.active === false);
   return shell(`
     ${pageHead("المنتسبون", `${S().employees.filter((e) => e.active !== false).length} منتسب`,
-      `${isAdmin() ? `<button class="btn primary" data-act="add-emp"><i data-lucide="user-plus"></i>إضافة منتسب</button><button class="btn" data-act="import"><i data-lucide="upload"></i>استيراد Excel</button>` : ""}<button class="btn" data-act="export-all"><i data-lucide="file-spreadsheet"></i>Excel</button>`)}
+      `${isSuper() ? `<button class="btn primary" data-act="add-emp"><i data-lucide="user-plus"></i>إضافة منتسب</button><button class="btn" data-act="import"><i data-lucide="upload"></i>استيراد Excel</button>` : ""}<button class="btn" data-act="export-all"><i data-lucide="file-spreadsheet"></i>Excel</button>`)}
     <div class="card">
       <div class="card-h">${segFilter()}</div>
       <div class="search"><i data-lucide="search"></i><input id="empSearch" placeholder="ابحث بالاسم أو القسم أو الرقم الوظيفي" value="${esc(ui.empSearch)}"></div>
       <div id="empTable">${employeeTable()}</div>
-    </div>`, "employees");
+    </div>
+    ${archived.length ? `<div class="card archived"><div class="card-h"><h3>المؤرشفون</h3><span class="muted small">${archived.length} — لا يظهرون بالقوائم ولا ينضافلهم استحقاق</span></div>
+      <ul class="list">${archived.map((e) => `<li><a href="#/employee/${e.id}">${esc(e.name)}</a><span>${CATEGORIES[e.category]}${isSuper() ? ` <button class="btn sm" data-act="archive" data-id="${e.id}" data-v="1">إعادة تفعيل</button>` : ""}</span></li>`).join("")}</ul></div>` : ""}`, "employees");
 }
 
 function employeeView(id) {
@@ -201,7 +204,7 @@ function employeeView(id) {
       <div class="card"><div class="card-h"><h3>الإجازات</h3></div>${requestsTable(reqs, true)}</div>
       <div class="card"><div class="card-h"><h3>حركة الرصيد</h3></div><div id="ledgerBox"><p class="empty">جارٍ التحميل…</p></div></div>
     </section>
-    ${isAdmin() ? `<div class="danger-zone"><button class="btn ghost sm" data-act="archive" data-id="${e.id}" data-v="${e.active === false ? 1 : 0}">${e.active === false ? "إعادة تفعيل المنتسب" : "أرشفة المنتسب (نقل / تقاعد)"}</button></div>` : ""}`, "employees");
+    ${isSuper() ? `<div class="danger-zone"><button class="btn ghost sm" data-act="archive" data-id="${e.id}" data-v="${e.active === false ? 1 : 0}"><i data-lucide="archive"></i>${e.active === false ? "إعادة تفعيل المنتسب" : "أرشفة المنتسب (نقل / تقاعد)"}</button><button class="btn ghost sm danger-txt" data-act="delete-emp" data-id="${e.id}"><i data-lucide="user-x"></i>حذف المنتسب</button></div>` : ""}`, "employees");
 }
 
 async function fillLedger(id) {
@@ -696,8 +699,13 @@ document.addEventListener("click", async (ev) => {
       case "add-emp": employeeModal(); break;
       case "edit-emp": employeeModal(empById(id)); break;
       case "adjust": adjustModal(id); break;
-      case "archive": if (confirm(v === "1" ? "إعادة تفعيل المنتسب؟" : "أرشفة المنتسب؟ يبقى سجله محفوظاً ولا يظهر بالقوائم.")) await store.archiveEmployee(id, v === "1"); break;
+      case "archive": if (confirm(v === "1" ? "إعادة تفعيل المنتسب؟" : "أرشفة المنتسب؟ يبقى سجله محفوظاً، ويختفي من القوائم، وما ينضافله استحقاق.")) { await store.archiveEmployee(id, v === "1"); toast(v === "1" ? "تمت إعادة التفعيل" : "تمت الأرشفة"); } break;
       case "import": importModal(); break;
+      case "delete-emp": {
+        const e = empById(id);
+        if (!confirm(`حذف ${e.name} نهائياً من النظام؟\nإذا انتقل أو تقاعد استخدم "أرشفة" بدلاً من الحذف حتى يبقى سجله ظاهراً.`)) break;
+        await store.deleteEmployee(id); toast("تم حذف المنتسب"); location.hash = "#/employees"; break;
+      }
       case "approve": decideModal(id, true); break;
       case "reject": decideModal(id, false); break;
       case "withdraw": withdrawModal(id); break;

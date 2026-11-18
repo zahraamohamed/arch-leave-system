@@ -36,8 +36,11 @@ service cloud.firestore {
 
     match /employees/{id} {
       allow read: if reader();
-      allow create: if manager();
-      allow update: if manager()
+      // Adding, archiving and deleting staff: super admin only
+      allow create: if superadmin();
+      allow update: if superadmin()
+        // Admin edits details and balances, but cannot archive or delete
+        || (role('admin') && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['active', 'deleted', 'deletedAt', 'deletedBy', 'deletedByName']))
         // Assistant may only change balances (approval, withdrawal refund, automatic accrual)
         || (assistant() && changes(['balance', 'sick', 'accruedThrough', 'updatedAt']));
       allow delete: if false;

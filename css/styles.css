@@ -384,3 +384,7 @@ tr.wrow td { background: #fbfaff; }
   .sh-sign div { min-width: 0; }
 }
 @media print { .sheet tr { display: table-row; } .sheet th, .sheet td { display: table-cell; } }
+
+.danger-zone { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.danger-txt { color: var(--bad) !important; }
+.card.archived { margin-top: 20px; }

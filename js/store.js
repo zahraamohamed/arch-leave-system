@@ -55,7 +55,7 @@ export async function initStore() {
   const listen = () => {
     const pending = {};
     const watch = (q, key) => F.onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
-      state[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      state[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => key !== "employees" || !x.deleted);
       pending[key] = snap.metadata.hasPendingWrites || snap.metadata.fromCache;
       state.synced = !Object.values(pending).some(Boolean);
       emit();
@@ -147,6 +147,11 @@ export async function initStore() {
       }
     },
     async archiveEmployee(id, active) { await F.updateDoc(ref("employees", id), { active, updatedAt: now() }); },
+    // حذف المنتسب (سوبر أدمن): يختفي من النظام، ويبقى سجله بالنسخ الاحتياطية
+    async deleteEmployee(id) {
+      if (state.requests.some((r) => r.employeeId === id && r.status === "pending")) throw new Error("عنده طلب معلّق — احذف الطلب أو انتظر قرار المعاون أولاً");
+      await F.updateDoc(ref("employees", id), { deleted: true, active: false, deletedAt: now(), deletedBy: state.user.uid, deletedByName: state.user.name, updatedAt: now() });
+    },
     async adjustBalance(employeeId, field, delta, reason) {
       await F.runTransaction(db, async (t) => {
         const s = await t.get(ref("employees", employeeId));
