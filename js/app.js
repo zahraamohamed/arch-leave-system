@@ -1,8 +1,8 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181246";
-import { COLLEGE } from "./config.js?v=202611181246";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement } from "./rules.js?v=202611181246";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181246";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181246";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181253";
+import { COLLEGE } from "./config.js?v=202611181253";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181253";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181253";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181253";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -32,7 +32,16 @@ const ruleText = (cat) => {
 };
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
 
-const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", rows: [{ date: "", days: "", note: "" }] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
+const newCalcRow = (type = "ordinary") => ({ type, from: "", to: "", days: "", hours: "", note: "" });
+const CALC_TYPES = {
+  ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct" },
+  hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct" },
+  sick:      { name: "مرضية",                    input: "days",   effect: "sick" },
+  maternity: { name: "أمومة",                    input: "period", effect: "pause" },
+  unpaid:    { name: "بدون راتب",                input: "period", effect: "pause" },
+  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" }
+};
+const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
 function logoHTML(size = 44, full = false) {
@@ -496,65 +505,103 @@ function calcView() {
   if (!c.asOf) c.asOf = today();
   const emps = S().employees.filter((e) => e.active !== false).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   return shell(`
-    ${pageHead("حاسبة الرصيد من تاريخ المباشرة", "تحسب الإجازات المستحقة من تاريخ المباشرة لغاية اليوم، ثم تستقطع الإجازات المأخوذة. ما تغيّر شي بالنظام إلا إذا ضغطت اعتماد.", `<button class="btn" data-act="print"><i data-lucide="printer"></i>طباعة</button>`)}
+    ${pageHead("حاسبة الرصيد من تاريخ المباشرة", "تحسب المستحق من تاريخ المباشرة، توقف الاستحقاق بفترات الأمومة وبدون راتب والإجازات الطويلة، وتستقطع الإجازات المأخوذة.", `<button class="btn" data-act="print"><i data-lucide="printer"></i>طباعة</button>`)}
     <div class="grid-2 req-grid">
       <form class="card form" id="calcForm" onsubmit="return false">
         <div class="step"><span>1</span>المنتسب وتاريخ المباشرة</div>
-        <label>منتسب مسجل (اختياري)<select name="empId"><option value="">— حساب حر بدون منتسب —</option>${emps.map((e) => `<option value="${e.id}" ${c.empId === e.id ? "selected" : ""}>${esc(e.name)} · ${CATEGORIES[e.category]}</option>`).join("")}</select></label>
+        <label>منتسب مسجل<select name="empId"><option value="">— منتسب جديد / حساب حر —</option>${emps.map((e) => `<option value="${e.id}" ${c.empId === e.id ? "selected" : ""}>${esc(e.name)} · ${CATEGORIES[e.category]}</option>`).join("")}</select></label>
+        ${c.empId ? "" : `<div class="row">
+          <label>الاسم الكامل<input name="name" value="${esc(c.name)}" placeholder="للإضافة كمنتسب جديد"></label>
+          <label>اللقب / العنوان<input name="title" value="${esc(c.title)}"></label></div>
+        <div class="row">
+          <label>القسم / الشعبة<input name="department" value="${esc(c.department)}"></label>
+          <label>الرقم الوظيفي<input name="empNo" value="${esc(c.empNo)}"></label></div>`}
         <div class="row">
           <label>الصنف<select name="category">${Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}" ${c.category === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
           <label>تاريخ المباشرة<input type="date" name="start" value="${esc(c.start)}" required></label>
           <label>لغاية تاريخ<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
         </div>
-        <div class="step"><span>2</span>الإجازات الاعتيادية المأخوذة</div>
+        <div class="step"><span>2</span>الإجازات والفترات</div>
         <div id="calcRows">${calcRows()}</div>
-        <button type="button" class="btn sm" data-act="calc-add-row"><i data-lucide="plus"></i>إضافة إجازة</button>
-        <p class="muted small">اكتب كل إجازة بسطر، أو اكتب المجموع كله بسطر واحد. الإجازات بدون راتب والمرضية لا تُكتب هنا.</p>
+        <div class="actions">${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
+        <ul class="muted small calc-help">
+          <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
+          <li><b>مرضية:</b> تنخصم من الرصيد المرضي.</li>
+          <li><b>أمومة، بدون راتب، طويلة:</b> ما تنخصم، بس أيامها توقف الاستحقاق. إذا قطعها، اكتب تاريخ رجوعه الفعلي كتاريخ نهاية.</li>
+        </ul>
       </form>
       <aside class="card summary calc-sheet" id="calcResult">${calcResult()}</aside>
     </div>`, "calc");
 }
 
 function calcRows() {
-  return ui.calc.rows.map((r, i) => `
-    <div class="calc-row" data-i="${i}">
-      <input type="date" data-k="date" value="${esc(r.date)}" title="تاريخ الإجازة (اختياري)">
-      <input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}">
-      <input type="text" data-k="note" placeholder="ملاحظة (اختياري)" value="${esc(r.note)}">
+  return ui.calc.rows.map((r, i) => {
+    const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+    const pd = periodDays(r.from, r.to);
+    const field = t.input === "period"
+      ? `<input type="date" data-k="from" value="${esc(r.from)}" title="من"><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}" title="إلى (تاريخ الرجوع الفعلي إذا قطعها)"><span class="calc-days">${pd ? `${pd} يوم` : "—"}</span>`
+      : t.input === "hours"
+        ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="hours" min="0" step="0.5" placeholder="الساعات" value="${esc(r.hours)}"><span class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</span>`
+        : `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}"><span class="calc-days"></span>`;
+    return `<div class="calc-row eff-${t.effect}" data-i="${i}">
+      <select data-k="type">${Object.entries(CALC_TYPES).map(([k, x]) => `<option value="${k}" ${k === r.type ? "selected" : ""}>${x.name}</option>`).join("")}</select>
+      ${field}
+      <input type="text" data-k="note" placeholder="ملاحظة" value="${esc(r.note)}">
       <button type="button" class="icon-btn" data-act="calc-del-row" data-id="${i}" title="حذف"><i data-lucide="x"></i></button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function calcData() {
-  const c = ui.calc;
-  const ent = serviceEntitlement({ start: c.start, asOf: c.asOf, category: c.category, rules: R() });
+  const c = ui.calc, rows = c.rows;
+  const periods = rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").map((r) => ({ from: r.from, to: r.to }));
+  const paused = pausedDays(periods, c.start, c.asOf);
+  const ent = serviceEntitlement({ start: c.start, asOf: c.asOf, category: c.category, rules: R(), paused });
   if (!ent) return null;
-  const taken = round2(c.rows.reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const hpd = R().hoursPerDay;
+  const takenDays = round2(rows.filter((r) => r.type === "ordinary").reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const takenHours = round2(rows.filter((r) => r.type === "hourly").reduce((a, r) => a + (Number(r.hours) || 0), 0));
+  const taken = round2(takenDays + takenHours / hpd);
+  const sickTaken = round2(rows.filter((r) => r.type === "sick").reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const byType = {};
+  rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").forEach((r) => { byType[r.type] = (byType[r.type] || 0) + periodDays(r.from, r.to); });
   const raw = round2(ent.ordinary - taken);
-  const capped = ent.cap > 0 && raw > ent.cap ? ent.cap : raw;
-  return { ...ent, taken, raw, final: capped };
+  const final = ent.cap > 0 && raw > ent.cap ? ent.cap : raw;
+  return { ...ent, takenDays, takenHours, taken, raw, final, sickTaken, sickLeft: round2(ent.sick - sickTaken), byType };
 }
 
 function calcResult() {
   const c = ui.calc, d = calcData(), e = empById(c.empId);
   if (!d) return `<div class="sum-empty"><i data-lucide="calendar-range"></i><p>اختر تاريخ المباشرة حتى تطلع النتيجة.</p></div>`;
-  const rule = c.category === "staff" ? "يوم عن كل 10 أيام خدمة (قانون الخدمة المدنية م43)" : `${num(R().categories.teaching.amount)} يوم لكل سنة دراسية، محسوبة نسبياً حسب الأشهر (قانون الخدمة الجامعية م10)`;
+  const rule = c.category === "staff" ? "يوم عن كل 10 أيام خدمة محتسبة (الخدمة المدنية م43)" : `${num(R().categories.teaching.amount)} يوم لكل سنة، نسبياً حسب الأشهر المحتسبة (الخدمة الجامعية م10)`;
+  const notToday = c.asOf !== today();
   return `
-    <div class="sum-who"><b>${e ? esc(e.name) : "حساب حر"}</b><span>${CATEGORIES[c.category]} · مباشرة ${fmtDate(c.start)} ← ${fmtDate(c.asOf)}</span></div>
+    <div class="sum-who"><b>${e ? esc(e.name) : esc(c.name) || "حساب حر"}</b><span>${CATEGORIES[c.category]} · مباشرة ${fmtDate(c.start)} ← ${fmtDate(c.asOf)}</span></div>
     <dl class="sum-dl">
       <div><dt>مدة الخدمة</dt><dd>${d.years} سنة و ${d.remMonths} شهر <small class="muted">(${d.days} يوم)</small></dd></div>
-      <div><dt>الاستحقاق الاعتيادي</dt><dd>${days(d.ordinary)}</dd></div>
-      <div><dt>المأخوذ</dt><dd class="neg">− ${days(d.taken)}</dd></div>
+      ${d.paused ? `<div><dt>أيام موقوفة</dt><dd class="neg">− ${d.paused} يوم</dd></div>
+        ${Object.entries(d.byType).map(([k, v]) => `<div class="sub-row"><dt>${CALC_TYPES[k].name}</dt><dd>${v} يوم</dd></div>`).join("")}
+        <div><dt>الخدمة المحتسبة</dt><dd>${d.effDays} يوم</dd></div>` : ""}
+      <div><dt>المستحق الاعتيادي</dt><dd>${days(d.ordinary)}</dd></div>
+      ${d.takenDays ? `<div><dt>اعتيادية مأخوذة</dt><dd class="neg">− ${days(d.takenDays)}</dd></div>` : ""}
+      ${d.takenHours ? `<div><dt>زمنية مأخوذة</dt><dd class="neg">− ${num(d.takenHours)} ساعة = ${days(round2(d.takenHours / R().hoursPerDay))}</dd></div>` : ""}
     </dl>
-    <div class="sum-bal"><span>الرصيد المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم اعتيادي</em></div>
-    ${d.final !== d.raw ? `<div class="note warn">الناتج ${days(d.raw)} لكن الحد الأعلى للتراكم ${d.cap} يوم (م43/3)، فالرصيد ${days(d.final)}.</div>` : ""}
-    ${d.final < 0 ? `<div class="note warn">المأخوذ أكثر من المستحق بـ ${days(-d.final)} — هذه الأيام تُعامل بدون راتب.</div>` : ""}
-    <dl class="sum-dl"><div><dt>الاستحقاق المرضي</dt><dd>${days(d.sick)} <small class="muted">(30 عن كل سنة كاملة — م46)</small></dd></div></dl>
-    <p class="muted small">طريقة الاحتساب: ${rule}.</p>
-    ${e ? `<div class="calc-apply noprint">
-        <p class="small">رصيد ${esc(e.name)} الحالي بالنظام: <b>${days(e.balance)}</b></p>
-        <button type="button" class="btn primary block" data-act="calc-apply" ${d.final === round2(e.balance) ? "disabled" : ""}><i data-lucide="check"></i>اعتماد ${days(Math.max(0, d.final))} كرصيد اعتيادي</button>
-      </div>` : ""}`;
+    <div class="sum-bal"><span>الرصيد الاعتيادي المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم</em></div>
+    ${d.final !== d.raw ? `<div class="note warn">الناتج ${days(d.raw)} لكن حد التراكم ${d.cap} يوم (م43/3)، فالرصيد ${days(d.final)}.</div>` : ""}
+    ${d.final < 0 ? `<div class="note warn">المأخوذ أكثر من المستحق بـ ${days(-d.final)} — تُعامل بدون راتب.</div>` : ""}
+    <dl class="sum-dl">
+      <div><dt>المستحق المرضي</dt><dd>${days(d.sick)}</dd></div>
+      ${d.sickTaken ? `<div><dt>مرضية مأخوذة</dt><dd class="neg">− ${days(d.sickTaken)}</dd></div>` : ""}
+      <div><dt>الرصيد المرضي المتبقي</dt><dd><b>${days(Math.max(0, d.sickLeft))}</b></dd></div>
+    </dl>
+    <p class="muted small">الاحتساب: ${rule}. المرضية 30 يوم عن كل سنة خدمة محتسبة كاملة (م46).</p>
+    <div class="calc-apply noprint">
+      ${e ? `<p class="small">رصيد ${esc(e.name)} الحالي: اعتيادي <b>${days(e.balance)}</b> · مرضي <b>${days(e.sick || 0)}</b></p>
+        <button type="button" class="btn primary block" data-act="calc-apply"><i data-lucide="check"></i>اعتماد الرصيدين للمنتسب</button>`
+      : `<button type="button" class="btn primary block" data-act="calc-add-emp"><i data-lucide="user-plus"></i>إضافة كمنتسب جديد بهذا الرصيد</button>
+        <p class="muted small">ينضاف برصيد اعتيادي ${days(Math.max(0, d.final))} ومرضي ${days(Math.max(0, d.sickLeft))}، والاستحقاق الشهري يكمل وحده من الشهر الجاي.</p>`}
+      ${notToday ? `<div class="note warn">"لغاية تاريخ" مو اليوم — الرصيد المعتمد يكون لغاية ${fmtDate(c.asOf)}، والاستحقاق التلقائي يبدأ من الشهر الحالي.</div>` : ""}
+    </div>`;
 }
 function refreshCalc() { const r = $("#calcResult"); if (r) { r.innerHTML = calcResult(); icons(); } }
 
@@ -766,15 +813,30 @@ document.addEventListener("click", async (ev) => {
         else if (p === "unsupported") toast("هذا المتصفح لا يدعم الإشعارات — على الآيفون أضف الموقع للشاشة الرئيسية أولاً", "bad");
         render(); break;
       }
-      case "calc-add-row": ui.calc.rows.push({ date: "", days: "", note: "" }); $("#calcRows").innerHTML = calcRows(); icons(); $("#calcRows .calc-row:last-child [data-k=days]").focus(); break;
-      case "calc-del-row": ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push({ date: "", days: "", note: "" }); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
+      case "calc-add-row": ui.calc.rows.push(newCalcRow(v || "ordinary")); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
+      case "calc-del-row": ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push(newCalcRow()); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
       case "calc-apply": {
         const d = calcData(), e = empById(ui.calc.empId);
-        const target = Math.max(0, d.final), delta = round2(target - (e.balance || 0));
-        if (!delta) break;
-        if (!confirm(`تحديد الرصيد الاعتيادي لـ ${e.name} إلى ${target} يوم (بدل ${num(e.balance)})؟\nينسجل بحركة الرصيد.`)) break;
-        await store.adjustBalance(e.id, "balance", delta, `احتساب من تاريخ المباشرة ${fmtDate(ui.calc.start)}: مستحق ${d.ordinary} − مأخوذ ${d.taken}`);
+        const nb = Math.max(0, d.final), ns = Math.max(0, d.sickLeft);
+        const dB = round2(nb - (e.balance || 0)), dS = round2(ns - (e.sick || 0));
+        if (!dB && !dS) { toast("الرصيد مطابق، ماكو تغيير"); break; }
+        if (!confirm(`تحديد رصيد ${e.name}:\nالاعتيادي ${nb} يوم (بدل ${num(e.balance)})\nالمرضي ${ns} يوم (بدل ${num(e.sick || 0)})\nينسجل بحركة الرصيد.`)) break;
+        const why = `احتساب من تاريخ المباشرة ${fmtDate(ui.calc.start)}${d.paused ? ` (موقوف ${d.paused} يوم)` : ""}`;
+        if (dB) await store.adjustBalance(e.id, "balance", dB, `${why}: مستحق ${d.ordinary} − مأخوذ ${d.taken}`);
+        if (dS) await store.adjustBalance(e.id, "sick", dS, `${why}: مرضي مستحق ${d.sick} − مأخوذ ${d.sickTaken}`);
         toast("تم اعتماد الرصيد"); refreshCalc(); break;
+      }
+      case "calc-add-emp": {
+        const c = ui.calc, d = calcData();
+        if (!c.name.trim()) { toast("اكتب اسم المنتسب أولاً", "bad"); $("#calcForm [name=name]")?.focus(); break; }
+        if (S().employees.some((x) => x.name.trim() === c.name.trim())) { if (!confirm("يوجد منتسب بنفس الاسم. تضيفه رغم ذلك؟")) break; }
+        if (!confirm(`إضافة ${c.name} (${CATEGORIES[c.category]}) برصيد اعتيادي ${Math.max(0, d.final)} ومرضي ${Math.max(0, d.sickLeft)} يوم؟`)) break;
+        await store.saveEmployee({ name: c.name, category: c.category, title: c.title, department: c.department, empNo: c.empNo,
+          notes: `مباشرة ${fmtDate(c.start)} — الرصيد محسوب بالحاسبة${d.paused ? `، موقوف ${d.paused} يوم` : ""}`,
+          balance: Math.max(0, d.final), sick: Math.max(0, d.sickLeft) });
+        toast(`تمت إضافة ${c.name}`);
+        ui.calc = { empId: "", category: c.category, start: "", asOf: today(), name: "", title: "", department: "", empNo: "", rows: [newCalcRow()] };
+        render(); break;
       }
       case "add-emp": employeeModal(); break;
       case "edit-emp": employeeModal(empById(id)); break;
@@ -814,8 +876,17 @@ document.addEventListener("input", (ev) => {
   if (t.id === "reqSearch") { ui.reqFilter.q = t.value.trim(); $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
   if (t.closest && t.closest("#calcForm")) {
     const row = t.closest(".calc-row");
-    if (row) ui.calc.rows[Number(row.dataset.i)][t.dataset.k] = t.value;
-    else if (t.name && t.name !== "empId") ui.calc[t.name] = t.value;
+    if (row) {
+      const r = ui.calc.rows[Number(row.dataset.i)];
+      r[t.dataset.k] = t.value;
+      if (t.dataset.k === "type" || t.dataset.k === "from" || t.dataset.k === "to" || t.dataset.k === "hours") {
+        if (t.dataset.k === "type") { $("#calcRows").innerHTML = calcRows(); icons(); }
+        else { const span = row.querySelector(".calc-days"); const tp = CALC_TYPES[r.type];
+          if (span && tp.input === "period") span.textContent = periodDays(r.from, r.to) ? `${periodDays(r.from, r.to)} يوم` : "—";
+          if (span && tp.input === "hours") span.textContent = r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—";
+          if (t.dataset.k === "from") { const to = row.querySelector("[data-k=to]"); if (to) to.min = r.from; } }
+      }
+    } else if (t.name && t.name !== "empId") ui.calc[t.name] = t.value;
     refreshCalc();
   }
   if (t.id === "formsSearch") { ui.formsQ = t.value; $("#formsList").innerHTML = formsList(); }
@@ -825,8 +896,8 @@ document.addEventListener("change", async (ev) => {
   if (t.name === "empId" && t.closest("#calcForm")) {
     ui.calc.empId = t.value;
     const e = empById(t.value);
-    if (e) { ui.calc.category = e.category; t.form.category.value = e.category; }
-    refreshCalc();
+    if (e) ui.calc.category = e.category;
+    render();
   }
   if (t.dataset.f) { ui.reqFilter[t.dataset.f] = t.value; $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
   if (t.id === "logoFile" && t.files[0]) { try { await store.saveSettings({ logo: await fileToLogo(t.files[0]) }); toast("تم حفظ الشعار"); } catch (e) { toast(e.message, "bad"); } }

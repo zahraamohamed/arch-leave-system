@@ -153,20 +153,47 @@ export function accrualFor(emp, rules, target = monthKey()) {
 //  الموظف: يوم عن كل 10 أيام خدمة (م43)، والرصيد المتراكم لا يتجاوز الحد (180)
 //  التدريسي: 15 يوم عن كل سنة دراسية (م10) — تُحسب نسبياً حسب أشهر الخدمة
 //  المرضية: 30 يوم عن كل سنة خدمة كاملة (م46)
-export function serviceEntitlement({ start, asOf, category, rules }) {
+//  الفترات الموقوفة (أمومة، بدون راتب، إجازة طويلة) لا يُستحق عنها رصيد
+const DAY = 86400000;
+const toD = (x) => new Date(x + "T00:00:00");
+
+// مجموع أيام الفترات الموقوفة داخل مدة الخدمة، بعد دمج المتداخل منها حتى ما ينحسب يوم مرتين
+export function pausedDays(periods, start, asOf) {
+  if (!start || !asOf) return 0;
+  const lo = toD(start).getTime(), hi = toD(asOf).getTime();
+  const iv = periods
+    .filter((p) => p.from && p.to && p.to >= p.from)
+    .map((p) => [Math.max(lo, toD(p.from).getTime()), Math.min(hi, toD(p.to).getTime())])
+    .filter(([a, b]) => b >= a)
+    .sort((x, y) => x[0] - y[0]);
+  let total = 0, cur = null;
+  for (const [a, b] of iv) {
+    if (!cur || a > cur[1] + DAY) { if (cur) total += (cur[1] - cur[0]) / DAY + 1; cur = [a, b]; }
+    else cur[1] = Math.max(cur[1], b);
+  }
+  if (cur) total += (cur[1] - cur[0]) / DAY + 1;
+  return Math.round(total);
+}
+
+export const periodDays = (from, to) => (from && to && to >= from ? Math.round((toD(to) - toD(from)) / DAY) + 1 : 0);
+
+export function serviceEntitlement({ start, asOf, category, rules, paused = 0 }) {
   if (!start || !asOf) return null;
-  const s = new Date(start + "T00:00:00"), e = new Date(asOf + "T00:00:00");
+  const s = toD(start), e = toD(asOf);
   if (e < s) return null;
-  const days = Math.round((e - s) / 86400000) + 1;
+  const days = Math.round((e - s) / DAY) + 1;
   let months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
   if (e.getDate() < s.getDate()) months--;
   months = Math.max(0, months);
-  const years = Math.floor(months / 12);
+  const effDays = Math.max(0, days - paused);
+  const effMonths = Math.max(0, months - paused / 30.4375);
   const c = rules.categories[category] || {};
-  const ordinary = category === "staff" ? round2(days / 10) : round2((c.amount || 15) * months / 12);
+  const ordinary = category === "staff" ? round2(effDays / 10) : round2((c.amount || 15) * effMonths / 12);
+  const effYears = Math.floor(effMonths / 12 + 1e-9);
   return {
-    days, months, years, remMonths: months % 12,
+    days, months, years: Math.floor(months / 12), remMonths: months % 12,
+    paused, effDays, effMonths: round2(effMonths),
     ordinary, cap: c.max || 0,
-    sick: years * (rules.sickAnnual || 30)
+    sick: effYears * (rules.sickAnnual || 30)
   };
 }
