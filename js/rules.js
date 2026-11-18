@@ -1,30 +1,35 @@
-// قوانين الإجازات — كلها قابلة للتعديل من صفحة الإعدادات.
+// قوانين الإجازات — مبنية على:
+//  • قانون الخدمة المدنية رقم 24 لسنة 1960 المعدل (الموظفون) — المواد 43 و 46
+//  • قانون الخدمة الجامعية رقم 23 لسنة 2008 المعدل (التدريسيون) — المادة 10، وما لم يرد به نص يرجع لقانون الخدمة المدنية (المادة 18)
+// كل الأرقام قابلة للتعديل من صفحة الإعدادات (سوبر أدمن فقط).
 
-export const CATEGORIES = {
-  staff: "موظف",
-  teaching: "تدريسي"
-};
+export const CATEGORIES = { staff: "موظف", teaching: "تدريسي" };
 
 export const DEFAULT_RULES = {
-  hoursPerDay: 7,                 // ساعات الدوام اليومي (لتحويل الإجازة الزمنية لأيام)
-  weekendDays: [5, 6],            // الجمعة والسبت (0 = الأحد)
-  excludeWeekends: true,          // عدم احتساب العطل الأسبوعية ضمن أيام الإجازة
+  version: 2,
+  hoursPerDay: 7,               // لتحويل الإجازة الزمنية لأيام (عرف إداري — لا يوجد نص صريح بالقانون)
+  weekendDays: [5, 6],          // الجمعة والسبت
+  excludeWeekends: true,
+  academicYearStartMonth: 9,    // بداية السنة الدراسية (أيلول)
+  sickAnnual: 30,               // مرضية براتب تام عن كل سنة خدمة — م46 خدمة مدنية
   categories: {
-    // الموظف: 3 أيام تنزل كل شهر وتتراكم إذا ما استخدمها
-    staff:    { accrual: "monthly", amount: 3,  accumulate: true,  max: 0 },
-    // التدريسي: 15 يوم بالسنة فقط (تتجدد ببداية كل سنة)
-    teaching: { accrual: "yearly",  amount: 15, accumulate: false, max: 0 }
+    // م43: يوم عن كل 10 أيام خدمة = 3 أيام بالشهر، تتراكم لحد 180 يوم، ولا يمنح أكثر من 120 يوم براتب بالمرة الواحدة
+    staff:    { accrual: "monthly", amount: 3, max: 180, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 60 },
+    // م10 خدمة جامعية: 15 يوم عن كل سنة دراسية تتراكم، ولا يمنح أكثر من 30 يوم خلال السنة الدراسية الواحدة
+    teaching: { accrual: "academic", amount: 15, max: 0, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 60 }
   },
-  // deducts: balance = تُخصم من الرصيد (براتب) | none = لا تُخصم
-  // unit: day | hour
+  // deducts: balance (الرصيد الاعتيادي) | sick (الرصيد المرضي) | none
+  // fixedPay لأنواع لا تخصم: paid | unpaid
   types: [
-    { key: "ordinary",  name: "اعتيادية",           deducts: "balance", unit: "day",  for: ["staff", "teaching"] },
-    { key: "hourly",    name: "زمنية (ساعية)",      deducts: "balance", unit: "hour", for: ["staff", "teaching"] },
-    { key: "unpaid",    name: "بدون راتب",          deducts: "none",    unit: "day",  for: ["staff", "teaching"] },
-    { key: "sick",      name: "مرضية",              deducts: "none",    unit: "day",  for: ["staff", "teaching"] },
-    { key: "maternity", name: "أمومة",              deducts: "none",    unit: "day",  for: ["staff", "teaching"] },
-    { key: "study",     name: "دراسية / تفرغ علمي", deducts: "none",    unit: "day",  for: ["teaching"] },
-    { key: "other",     name: "أخرى",               deducts: "none",    unit: "day",  for: ["staff", "teaching"] }
+    { key: "ordinary",   name: "اعتيادية",            deducts: "balance", unit: "day",  for: ["staff", "teaching"] },
+    { key: "hourly",     name: "زمنية (ساعية)",       deducts: "balance", unit: "hour", for: ["staff", "teaching"] },
+    { key: "sick",       name: "مرضية",               deducts: "sick",    unit: "day",  for: ["staff", "teaching"] },
+    { key: "unpaid",     name: "بدون راتب",           deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "unpaid" },
+    { key: "maternity",  name: "أمومة / وضع",         deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid" },
+    { key: "summer",     name: "العطلة الصيفية",      deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
+    { key: "sabbatical", name: "تفرغ علمي",           deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
+    { key: "study",      name: "دراسية",              deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid" },
+    { key: "other",      name: "أخرى",                deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid" }
   ]
 };
 
@@ -32,21 +37,30 @@ export const STATUS = {
   pending: "بانتظار المعاون الإداري",
   approved: "موافق عليها",
   rejected: "مرفوضة",
-  cancelled: "ملغاة"
+  cancelled: "ملغاة",
+  withdrawn: "مسحوبة"
 };
 
-export const PAY = { paid: "براتب", unpaid: "بدون راتب", partial: "جزء براتب وجزء بدون راتب" };
+export const ROLES = {
+  superadmin: "سوبر أدمن",
+  admin: "مسؤول الإجازات",
+  assistant: "المعاون الإداري",
+  backup: "حساب النسخ الاحتياطي"
+};
 
-export const ROLES = { admin: "مسؤول النظام", assistant: "المعاون الإداري", backup: "حساب النسخ الاحتياطي" };
-
-export const round2 = (x) => Math.round(x * 100) / 100;
+export const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 export const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-// عدد أيام الإجازة بين تاريخين (شامل)، مع استثناء العطل الأسبوعية إذا مفعّل
+// السنة الدراسية لتاريخ معيّن، مثل "2026/2027"
+export function academicYear(dateStr, startMonth = 9) {
+  const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
+  const y = d.getMonth() + 1 >= startMonth ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}/${y + 1}`;
+}
+
 export function countDays(start, end, rules) {
   if (!start || !end) return 0;
-  const s = new Date(start + "T00:00:00");
-  const e = new Date(end + "T00:00:00");
+  const s = new Date(start + "T00:00:00"), e = new Date(end + "T00:00:00");
   if (e < s) return 0;
   let n = 0;
   for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
@@ -56,44 +70,81 @@ export function countDays(start, end, rules) {
   return n;
 }
 
-// الطلب بالأيام (الزمنية تتحول لأيام)
 export function requestDays(type, req, rules) {
   if (!type) return 0;
   if (type.unit === "hour") return round2((Number(req.hours) || 0) / rules.hoursPerDay);
   return Number(req.days) || 0;
 }
 
-// يحدد براتب / بدون راتب حسب الرصيد
-// split = true: يحتسب المتوفر براتب والباقي بدون راتب
-export function payPlan(type, total, balance, split) {
-  if (!type || type.deducts === "none") return { pay: type && type.key === "unpaid" ? "unpaid" : "none", paid: 0, unpaid: type && type.key === "unpaid" ? total : 0 };
-  if (total <= 0) return { pay: "paid", paid: 0, unpaid: 0 };
-  if (balance >= total) return { pay: "paid", paid: total, unpaid: 0 };
-  const avail = Math.max(0, round2(balance));
-  if (split && avail > 0) return { pay: "partial", paid: avail, unpaid: round2(total - avail) };
-  return { pay: "unpaid", paid: 0, unpaid: total };
+// الأيام المأخوذة براتب من الرصيد الاعتيادي خلال السنة الدراسية (للتدريسي: الحد 30 يوم)
+export function paidInAcademicYear(requests, employeeId, year, startMonth, excludeId) {
+  return round2(requests
+    .filter((r) => r.employeeId === employeeId && r.kind !== "withdrawal" && r.status === "approved" && r.deducts === "balance" && r.id !== excludeId && !r.deleted)
+    .filter((r) => academicYear(r.startDate, startMonth) === year)
+    .reduce((a, r) => a + (r.paid || 0), 0));
 }
 
-// الاستحقاق المتراكم لموظف من آخر شهر محتسب لغاية الشهر الحالي
+// خطة الصرف: كم براتب، كم نصف راتب، كم بدون راتب، مع السبب
+export function payPlan({ type, total, employee, rules, requests, startDate, excludeId, split = true }) {
+  const out = { paid: 0, half: 0, unpaid: 0, notes: [] };
+  if (!type || !(total > 0)) return { ...out, pay: "none" };
+  if (type.deducts === "none") {
+    if (type.fixedPay === "unpaid") out.unpaid = total; else out.paid = total;
+    return { ...out, pay: type.fixedPay === "unpaid" ? "unpaid" : "paid", fromBalance: false };
+  }
+  if (type.deducts === "sick") {
+    const sick = Math.max(0, round2(employee.sick || 0));
+    out.paid = Math.min(total, sick);
+    out.half = round2(total - out.paid);
+    if (out.half > 0) out.notes.push(`الرصيد المرضي ${sick} يوم — الباقي بنصف راتب (م46)`);
+    return { ...out, pay: out.half ? (out.paid ? "mixed" : "half") : "paid", fromBalance: true };
+  }
+  // الرصيد الاعتيادي
+  const c = rules.categories[employee.category] || {};
+  let avail = Math.max(0, round2(employee.balance || 0));
+  if (c.maxPaidPerLeave > 0 && avail > c.maxPaidPerLeave) { avail = c.maxPaidPerLeave; out.notes.push(`الحد الأعلى براتب بالمرة الواحدة ${c.maxPaidPerLeave} يوم (م43)`); }
+  if (c.maxPaidPerYear > 0) {
+    const yr = academicYear(startDate, rules.academicYearStartMonth);
+    const used = paidInAcademicYear(requests || [], employee.id, yr, rules.academicYearStartMonth, excludeId);
+    const left = Math.max(0, round2(c.maxPaidPerYear - used));
+    if (left < avail) { avail = left; out.notes.push(`المتبقي براتب للسنة الدراسية ${yr}: ${left} من ${c.maxPaidPerYear} يوم (م10 خدمة جامعية)`); }
+  }
+  if (avail >= total) out.paid = total;
+  else if (split && avail > 0) { out.paid = avail; out.unpaid = round2(total - avail); }
+  else out.unpaid = total;
+  if (out.unpaid > 0 && c.maxUnpaidPerLeave > 0 && out.unpaid > c.maxUnpaidPerLeave) out.notes.push(`تنبيه: بدون راتب أكثر من ${c.maxUnpaidPerLeave} يوم (م43/4)`);
+  const pay = out.unpaid ? (out.paid ? "partial" : "unpaid") : "paid";
+  return { ...out, pay, fromBalance: true };
+}
+
+export const PAY = { paid: "براتب", unpaid: "بدون راتب", partial: "جزء براتب وجزء بدون راتب", half: "نصف راتب", mixed: "جزء براتب وجزء نصف راتب", none: "—" };
+export function payText(r) {
+  const parts = [];
+  if (r.paid) parts.push(`${r.paid} براتب`);
+  if (r.half) parts.push(`${r.half} نصف راتب`);
+  if (r.unpaid) parts.push(`${r.unpaid} بدون راتب`);
+  return parts.join(" + ");
+}
+
+// الاستحقاق التلقائي من آخر شهر محتسب لغاية الشهر الحالي
 export function accrualFor(emp, rules, target = monthKey()) {
   const c = rules.categories[emp.category];
   const from = emp.accruedThrough;
   if (!c || !from || from >= target) return null;
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = target.split("-").map(Number);
-  const cur = Number(emp.balance) || 0;
-  let after = cur, label;
-  if (c.accrual === "monthly") {
-    const months = (ty - fy) * 12 + (tm - fm);
-    after = cur + c.amount * months;
-    label = months === 1 ? `استحقاق شهر ${target}` : `استحقاق ${months} أشهر لغاية ${target}`;
-  } else {
-    const years = ty - fy;
-    if (years < 1) return { delta: 0, after: cur, label: "", target };
-    after = c.accumulate ? cur + c.amount * years : c.amount;
-    label = `رصيد سنة ${ty}` + (c.accumulate ? "" : " (تجديد)");
+  let [y, m] = from.split("-").map(Number);
+  let bal = round2(emp.balance), sick = round2(emp.sick);
+  const labels = [];
+  let addB = 0, addS = 0;
+  while (true) {
+    m++; if (m > 12) { m = 1; y++; }
+    const k = `${y}-${String(m).padStart(2, "0")}`;
+    if (k > target) break;
+    if (c.accrual === "monthly") addB += c.amount;
+    if (c.accrual === "academic" && m === rules.academicYearStartMonth) { addB += c.amount; labels.push(`رصيد السنة الدراسية ${y}/${y + 1}`); }
+    if (m === 1 && rules.sickAnnual) { addS += rules.sickAnnual; labels.push(`رصيد مرضي ${y}`); }
   }
-  if (c.max > 0) after = Math.min(after, Math.max(c.max, cur));
-  after = round2(after);
-  return { delta: round2(after - cur), after, label, target };
+  let newB = round2(bal + addB);
+  if (c.max > 0) newB = Math.min(newB, Math.max(c.max, bal));
+  const label = c.accrual === "monthly" ? `استحقاق لغاية ${target}` : (labels.join(" · ") || `تحديث ${target}`);
+  return { target, balance: newB, dBalance: round2(newB - bal), sick: round2(sick + addS), dSick: addS, label };
 }

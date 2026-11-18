@@ -6,56 +6,58 @@ service cloud.firestore {
     function me() { return get(userDoc()).data; }
     function active() { return signedIn() && exists(userDoc()) && me().active == true; }
     function role(r) { return active() && me().role == r; }
-    function staff() { return role('admin') || role('assistant'); }
+    function superadmin() { return role('superadmin'); }
+    function manager() { return role('admin') || superadmin(); }          // creates, deletes, withdraws requests
+    function assistant() { return role('assistant'); }                      // approves / rejects
+    function staff() { return manager() || assistant(); }
     function reader() { return staff() || role('backup'); }
-    function noBootstrap() { return !exists(/databases/$(database)/documents/meta/bootstrap); }
-    function bootstrappingAdmin() {
-      return signedIn() && noBootstrap() && getAfter(userDoc()).data.role == 'admin';
-    }
     function changes(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function newStatus() { return request.resource.data.status; }
 
-    // First run only: create the first admin account
-    match /meta/bootstrap {
-      allow read: if true;
-      allow create: if bootstrappingAdmin();
-      allow update, delete: if false;
-    }
+    match /meta/bootstrap { allow read: if true; allow write: if false; }
     // Request serial counters
     match /meta/{id} {
       allow read: if reader();
-      allow write: if role('admin');
+      allow write: if manager();
     }
 
+    // Accounts: only the super admin creates, activates or deactivates
     match /users/{uid} {
-      allow read: if reader() || (signedIn() && request.auth.uid == uid);
-      allow create: if role('admin')
-        || (signedIn() && request.auth.uid == uid && noBootstrap() && request.resource.data.role == 'admin');
-      allow update: if role('admin');
+      allow read: if superadmin() || role('backup') || (signedIn() && request.auth.uid == uid);
+      allow create, update: if superadmin();
       allow delete: if false;
     }
 
+    // Leave rules, identity: super admin only
     match /settings/{id} {
       allow read: if reader();
-      allow write: if role('admin') || bootstrappingAdmin();
+      allow write: if superadmin();
     }
 
     match /employees/{id} {
       allow read: if reader();
-      allow create: if role('admin');
-      // Assistant may only change balance (approval or automatic accrual)
-      allow update: if role('admin') || (role('assistant') && changes(['balance', 'accruedThrough', 'updatedAt']));
+      allow create: if manager();
+      allow update: if manager()
+        // Assistant may only change balances (approval, withdrawal refund, automatic accrual)
+        || (assistant() && changes(['balance', 'sick', 'accruedThrough', 'updatedAt']));
       allow delete: if false;
     }
 
     match /requests/{id} {
       allow read: if reader();
-      allow create: if role('admin') && request.resource.data.status == 'pending';
-      allow update: if resource.data.status == 'pending' && (
-        // Only the administrative assistant approves or rejects
-        (role('assistant') && request.resource.data.status in ['approved', 'rejected'])
-        // Admin may only cancel
-        || (role('admin') && request.resource.data.status == 'cancelled')
-      );
+      allow create: if manager() && request.resource.data.status == 'pending';
+      allow update: if
+        // Only the administrative assistant decides pending requests (leave or withdrawal)
+        (assistant() && resource.data.status == 'pending' && newStatus() in ['approved', 'rejected'])
+        // Assistant marks the original leave as withdrawn when approving a withdrawal
+        || (assistant() && resource.data.status == 'approved' && newStatus() == 'withdrawn'
+            && changes(['status', 'withdrawnAt', 'withdrawnBy', 'withdrawnByName', 'withdrawalId']))
+        // Managers cancel pending requests
+        || (manager() && resource.data.status == 'pending' && newStatus() == 'cancelled'
+            && changes(['status', 'decidedAt', 'decidedBy', 'decidedByName', 'deleted', 'deletedAt', 'deletedBy', 'deletedByName']))
+        // Managers soft-delete requests that are not approved
+        || (manager() && !(resource.data.status in ['approved', 'withdrawn'])
+            && changes(['deleted', 'deletedAt', 'deletedBy', 'deletedByName']));
       allow delete: if false;
     }
 
