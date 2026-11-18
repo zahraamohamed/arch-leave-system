@@ -716,12 +716,12 @@ subscribe(() => {
   notifyNew();
   // أثناء تعبئة طلب جديد أو وجود نافذة مفتوحة: نحدّث الملخص فقط حتى ما تنمسح الكتابة
   if (document.querySelector(".modal-bg")) return;
-  if (location.hash.startsWith("#/new") && $("#reqForm")) { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { refreshSummary(); }); return; }
+  if (location.hash.startsWith("#/new") && $("#reqForm")) { clearTimeout(raf); raf = setTimeout(refreshSummary, 30); return; }
   if (document.activeElement && ["empSearch", "reqSearch"].includes(document.activeElement.id)) {
     $("#empTable") && ($("#empTable").innerHTML = employeeTable());
     return;
   }
-  cancelAnimationFrame(raf); raf = requestAnimationFrame(render);
+  clearTimeout(raf); raf = setTimeout(render, 30);
 });
 window.addEventListener("hashchange", render);
 

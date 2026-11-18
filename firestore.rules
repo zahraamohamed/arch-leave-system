@@ -14,13 +14,13 @@ service cloud.firestore {
     }
     function changes(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
 
-    // أول تشغيل فقط: إنشاء حساب المسؤول الأول
+    // First run only: create the first admin account
     match /meta/bootstrap {
       allow read: if true;
       allow create: if bootstrappingAdmin();
       allow update, delete: if false;
     }
-    // عدّاد أرقام الطلبات
+    // Request serial counters
     match /meta/{id} {
       allow read: if reader();
       allow write: if role('admin');
@@ -42,7 +42,7 @@ service cloud.firestore {
     match /employees/{id} {
       allow read: if reader();
       allow create: if role('admin');
-      // المعاون الإداري يغير الرصيد فقط (عند الموافقة أو الاستحقاق التلقائي)
+      // Assistant may only change balance (approval or automatic accrual)
       allow update: if role('admin') || (role('assistant') && changes(['balance', 'accruedThrough', 'updatedAt']));
       allow delete: if false;
     }
@@ -51,15 +51,15 @@ service cloud.firestore {
       allow read: if reader();
       allow create: if role('admin') && request.resource.data.status == 'pending';
       allow update: if resource.data.status == 'pending' && (
-        // المعاون الإداري وحده يوافق أو يرفض
+        // Only the administrative assistant approves or rejects
         (role('assistant') && request.resource.data.status in ['approved', 'rejected'])
-        // مسؤول النظام يقدر يلغي فقط
+        // Admin may only cancel
         || (role('admin') && request.resource.data.status == 'cancelled')
       );
       allow delete: if false;
     }
 
-    // سجل حركة الأرصدة: يُضاف فقط، لا يُعدّل ولا يُحذف
+    // Balance ledger: append-only, never edited or deleted
     match /ledger/{id} {
       allow read: if reader();
       allow create: if staff();

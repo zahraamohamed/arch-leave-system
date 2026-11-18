@@ -124,7 +124,7 @@ async function firebaseBackend() {
             if (!d || !d.active || !["admin", "assistant"].includes(d.role)) throw new Error("inactive");
             state.user = { uid: u.uid, username: d.username, name: d.name, role: d.role };
             listen();
-          } catch { state.user = null; await A.signOut(auth); }
+          } catch (err) { console.error("login profile", err); state.user = null; state.loginError = err.message === "inactive" ? "الحساب غير مفعّل" : "تعذر تحميل بيانات الحساب"; await A.signOut(auth); }
           state.ready = true; emit(); res();
         });
       });
