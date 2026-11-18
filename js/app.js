@@ -1,8 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181253";
-import { COLLEGE } from "./config.js?v=202611181253";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181253";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181253";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181253";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181300";
+import { COLLEGE } from "./config.js?v=202611181300";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181300";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181300";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181300";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181300";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -320,8 +321,8 @@ function wireNewRequest() {
     ui.newReq[n] = ev.target.value;
     if (n === "type") return refreshReq(true);
     if (n === "startDate" || n === "endDate") {
-      if (n === "startDate" && form.endDate && (!ui.newReq.endDate || ui.newReq.endDate < ui.newReq.startDate)) { ui.newReq.endDate = ui.newReq.startDate; form.endDate.value = ui.newReq.startDate; }
-      if (form.endDate) form.endDate.min = ui.newReq.startDate || "";
+      if (n === "startDate" && form.endDate && (!ui.newReq.endDate || ui.newReq.endDate < ui.newReq.startDate)) { ui.newReq.endDate = ui.newReq.startDate; setDateValue(form.endDate, ui.newReq.startDate); }
+      if (form.endDate) setDateMin(form.endDate, ui.newReq.startDate);
       if (form.days) { ui.newReq.days = countDays(ui.newReq.startDate, ui.newReq.endDate, R()) || ""; form.days.value = ui.newReq.days; }
     }
     refreshSummary();
@@ -884,7 +885,7 @@ document.addEventListener("input", (ev) => {
         else { const span = row.querySelector(".calc-days"); const tp = CALC_TYPES[r.type];
           if (span && tp.input === "period") span.textContent = periodDays(r.from, r.to) ? `${periodDays(r.from, r.to)} يوم` : "—";
           if (span && tp.input === "hours") span.textContent = r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—";
-          if (t.dataset.k === "from") { const to = row.querySelector("[data-k=to]"); if (to) to.min = r.from; } }
+          if (t.dataset.k === "from") setDateMin(row.querySelector("[data-k=to]"), r.from); }
       }
     } else if (t.name && t.name !== "empId") ui.calc[t.name] = t.value;
     refreshCalc();
@@ -993,6 +994,7 @@ window.addEventListener("hashchange", render);
 
 (async () => {
   initNotifications();
+  initDatePickers();
   try { await initStore(); }
   catch (e) { app.innerHTML = `<div class="login"><div class="login-card"><h1>تعذر تحميل النظام</h1><p>${esc(e.message)}</p><p class="muted small">تأكد من الاتصال بالإنترنت وأعد تحميل الصفحة.</p></div></div>`; return; }
   render();
