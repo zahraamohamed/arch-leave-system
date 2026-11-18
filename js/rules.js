@@ -13,10 +13,12 @@ export const DEFAULT_RULES = {
   academicYearStartMonth: 9,    // بداية السنة الدراسية (أيلول)
   sickAnnual: 30,               // مرضية براتب تام عن كل سنة خدمة — م46 خدمة مدنية
   categories: {
-    // م43: يوم عن كل 10 أيام خدمة = 3 أيام بالشهر، تتراكم لحد 180 يوم، ولا يمنح أكثر من 120 يوم براتب بالمرة الواحدة
-    staff:    { accrual: "monthly", amount: 3, max: 180, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 60 },
+    // م43: يوم عن كل 10 أيام خدمة = 3 أيام بالشهر، تتراكم بدون حد للإجازة
+    // (حد الـ180 يوم بالقانون يخص احتساب الرصيد عند التقاعد فقط، فما ينطبق هنا)
+    // ولا يمنح أكثر من 120 يوم براتب بالمرة الواحدة
+    staff:    { accrual: "monthly", amount: 3, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 60 },
     // م10 خدمة جامعية: 15 يوم عن كل سنة دراسية تتراكم، ولا يمنح أكثر من 30 يوم خلال السنة الدراسية الواحدة
-    teaching: { accrual: "academic", amount: 15, max: 0, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 60 }
+    teaching: { accrual: "academic", amount: 15, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 60 }
   },
   // deducts: balance (الرصيد الاعتيادي) | sick (الرصيد المرضي) | none
   // fixedPay لأنواع لا تخصم: paid | unpaid
@@ -144,13 +146,12 @@ export function accrualFor(emp, rules, target = monthKey()) {
     if (m === 1 && rules.sickAnnual) { addS += rules.sickAnnual; labels.push(`رصيد مرضي ${y}`); }
   }
   let newB = round2(bal + addB);
-  if (c.max > 0) newB = Math.min(newB, Math.max(c.max, bal));
   const label = c.accrual === "monthly" ? `استحقاق لغاية ${target}` : (labels.join(" · ") || `تحديث ${target}`);
   return { target, balance: newB, dBalance: round2(newB - bal), sick: round2(sick + addS), dSick: addS, label };
 }
 
 // حاسبة الاستحقاق من تاريخ المباشرة
-//  الموظف: يوم عن كل 10 أيام خدمة (م43)، والرصيد المتراكم لا يتجاوز الحد (180)
+//  الموظف: يوم عن كل 10 أيام خدمة (م43)، بدون حد للتراكم
 //  التدريسي: 15 يوم عن كل سنة دراسية (م10) — تُحسب نسبياً حسب أشهر الخدمة
 //  المرضية: 30 يوم عن كل سنة خدمة كاملة (م46)
 //  الفترات الموقوفة (أمومة، بدون راتب، إجازة طويلة) لا يُستحق عنها رصيد
@@ -193,7 +194,7 @@ export function serviceEntitlement({ start, asOf, category, rules, paused = 0 })
   return {
     days, months, years: Math.floor(months / 12), remMonths: months % 12,
     paused, effDays, effMonths: round2(effMonths),
-    ordinary, cap: c.max || 0,
+    ordinary, cap: 0,
     sick: effYears * (rules.sickAnnual || 30)
   };
 }

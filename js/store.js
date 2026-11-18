@@ -1,6 +1,6 @@
 // طبقة البيانات: Firebase (Auth + Firestore) مع تزامن لحظي وتخزين محلي عند انقطاع النت.
-import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181315";
-import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181315";
+import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181323";
+import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181323";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const APP_ROLES = ["superadmin", "admin", "assistant"];
@@ -29,8 +29,8 @@ export const mergeSettings = (s = {}) => {
     rules: {
       ...DEFAULT_RULES, ...base,
       categories: {
-        staff: { ...DEFAULT_RULES.categories.staff, ...((base.categories || {}).staff || {}) },
-        teaching: { ...DEFAULT_RULES.categories.teaching, ...((base.categories || {}).teaching || {}) }
+        staff: { ...DEFAULT_RULES.categories.staff, ...((base.categories || {}).staff || {}), max: 0 },
+        teaching: { ...DEFAULT_RULES.categories.teaching, ...((base.categories || {}).teaching || {}), max: 0 }
       },
       types: DEFAULT_RULES.types,
       version: DEFAULT_RULES.version

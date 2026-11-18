@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181315";
-import { COLLEGE } from "./config.js?v=202611181315";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181315";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181315";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181315";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181315";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181323";
+import { COLLEGE } from "./config.js?v=202611181323";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181323";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181323";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181323";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181323";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -28,7 +28,7 @@ const pendingWithdrawal = (id) => S().requests.find((x) => x.kind === "withdrawa
 const ruleText = (cat) => {
   const c = R().categories[cat]; if (!c) return "";
   return cat === "staff"
-    ? `${num(c.amount)} أيام شهرياً، تتراكم لحد ${c.max || "∞"} يوم`
+    ? `${num(c.amount)} أيام شهرياً، وتتراكم بدون حد`
     : `${num(c.amount)} يوم لكل سنة دراسية، وبحد أقصى ${c.maxPaidPerYear} يوم براتب بالسنة`;
 };
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
@@ -597,7 +597,6 @@ function calcResult() {
       ${d.takenHours ? `<div><dt>زمنية مأخوذة</dt><dd class="neg">− ${num(d.takenHours)} ساعة = ${days(round2(d.takenHours / R().hoursPerDay))}</dd></div>` : ""}
     </dl>
     <div class="sum-bal"><span>الرصيد الاعتيادي المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم</em></div>
-    ${d.final !== d.raw ? `<div class="note warn">الناتج ${days(d.raw)} لكن حد التراكم ${d.cap} يوم (م43/3)، فالرصيد ${days(d.final)}.</div>` : ""}
     ${d.final < 0 ? `<div class="note warn">المأخوذ أكثر من المستحق بـ ${days(-d.final)} — تُعامل بدون راتب.</div>` : ""}
     <dl class="sum-dl">
       <div><dt>المستحق المرضي</dt><dd>${days(d.sick)}</dd></div>
@@ -625,7 +624,7 @@ function settingsView() {
       <form class="card form" id="rulesForm">
         <div class="card-h"><h3>قوانين احتساب الإجازات</h3></div>
         <fieldset><legend>الموظفون — قانون الخدمة المدنية 24/1960</legend>
-          <div class="row">${n("staff.amount", c.staff.amount, "أيام شهرياً", "م43: يوم عن كل 10 أيام")}${n("staff.max", c.staff.max, "حد التراكم", "م43/3: 180 يوم")}</div>
+          <div class="row">${n("staff.amount", c.staff.amount, "أيام شهرياً", "م43: يوم عن كل 10 أيام")}<label>التراكم<input value="بدون حد" disabled><small>حد الـ180 يوم للتقاعد فقط</small></label></div>
           <div class="row">${n("staff.maxPaidPerLeave", c.staff.maxPaidPerLeave, "أقصى براتب بالمرة", "م43/3: 120 يوم")}${n("staff.maxUnpaidPerLeave", c.staff.maxUnpaidPerLeave, "أقصى بدون راتب", "م43/4: 60 يوم")}</div>
         </fieldset>
         <fieldset><legend>التدريسيون — قانون الخدمة الجامعية 23/2008</legend>
@@ -921,7 +920,7 @@ document.addEventListener("submit", async (ev) => {
       version: cur.version, hoursPerDay: g("hoursPerDay") || 7, sickAnnual: g("sickAnnual"), excludeWeekends: f.elements.excludeWeekends.checked,
       weekendDays: cur.weekendDays, academicYearStartMonth: g("academicYearStartMonth") || 9,
       categories: {
-        staff: { ...cur.categories.staff, amount: g("staff.amount"), max: g("staff.max"), maxPaidPerLeave: g("staff.maxPaidPerLeave"), maxUnpaidPerLeave: g("staff.maxUnpaidPerLeave") },
+        staff: { ...cur.categories.staff, amount: g("staff.amount"), maxPaidPerLeave: g("staff.maxPaidPerLeave"), maxUnpaidPerLeave: g("staff.maxUnpaidPerLeave") },
         teaching: { ...cur.categories.teaching, amount: g("teaching.amount"), maxPaidPerYear: g("teaching.maxPaidPerYear"), maxUnpaidPerLeave: g("teaching.maxUnpaidPerLeave") }
       }
     };
