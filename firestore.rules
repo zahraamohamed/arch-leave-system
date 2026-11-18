@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function me() { return get(userDoc()).data; }
+    function active() { return signedIn() && exists(userDoc()) && me().active == true; }
+    function role(r) { return active() && me().role == r; }
+    function staff() { return role('admin') || role('assistant'); }
+    function reader() { return staff() || role('backup'); }
+    function noBootstrap() { return !exists(/databases/$(database)/documents/meta/bootstrap); }
+    function bootstrappingAdmin() {
+      return signedIn() && noBootstrap() && getAfter(userDoc()).data.role == 'admin';
+    }
+    function changes(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // أول تشغيل فقط: إنشاء حساب المسؤول الأول
+    match /meta/bootstrap {
+      allow read: if true;
+      allow create: if bootstrappingAdmin();
+      allow update, delete: if false;
+    }
+    // عدّاد أرقام الطلبات
+    match /meta/{id} {
+      allow read: if reader();
+      allow write: if role('admin');
+    }
+
+    match /users/{uid} {
+      allow read: if reader() || (signedIn() && request.auth.uid == uid);
+      allow create: if role('admin')
+        || (signedIn() && request.auth.uid == uid && noBootstrap() && request.resource.data.role == 'admin');
+      allow update: if role('admin');
+      allow delete: if false;
+    }
+
+    match /settings/{id} {
+      allow read: if reader();
+      allow write: if role('admin') || bootstrappingAdmin();
+    }
+
+    match /employees/{id} {
+      allow read: if reader();
+      allow create: if role('admin');
+      // المعاون الإداري يغير الرصيد فقط (عند الموافقة أو الاستحقاق التلقائي)
+      allow update: if role('admin') || (role('assistant') && changes(['balance', 'accruedThrough', 'updatedAt']));
+      allow delete: if false;
+    }
+
+    match /requests/{id} {
+      allow read: if reader();
+      allow create: if role('admin') && request.resource.data.status == 'pending';
+      allow update: if resource.data.status == 'pending' && (
+        // المعاون الإداري وحده يوافق أو يرفض
+        (role('assistant') && request.resource.data.status in ['approved', 'rejected'])
+        // مسؤول النظام يقدر يلغي فقط
+        || (role('admin') && request.resource.data.status == 'cancelled')
+      );
+      allow delete: if false;
+    }
+
+    // سجل حركة الأرصدة: يُضاف فقط، لا يُعدّل ولا يُحذف
+    match /ledger/{id} {
+      allow read: if reader();
+      allow create: if staff();
+      allow update, delete: if false;
+    }
+  }
+}
