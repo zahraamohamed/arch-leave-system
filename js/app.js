@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611181323";
-import { COLLEGE } from "./config.js?v=202611181323";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181323";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181323";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181323";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181323";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611181337";
+import { COLLEGE } from "./config.js?v=202611181337";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611181337";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611181337";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611181337";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611181337";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -38,7 +38,8 @@ const CALC_TYPES = {
   ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct" },
   hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct" },
   sick:      { name: "مرضية",                    input: "days",   effect: "sick" },
-  maternity: { name: "أمومة",                    input: "period", effect: "pause" },
+  delivery:  { name: "حمل ووضع",                 input: "period", effect: "pause" },
+  maternity: { name: "أمومة (رعاية طفل)",        input: "period", effect: "pause" },
   unpaid:    { name: "بدون راتب",                input: "period", effect: "pause" },
   long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" },
   absence:   { name: "غياب",                     input: "absence", effect: "absence" }
@@ -487,6 +488,7 @@ function formView(id) {
         ${ay ? `<tr><th>نوع الإجازة</th><td colspan="3">${esc(r.typeName)}</td></tr>` : ""}
         <tr><th>من</th><td>${fmtDate(r.startDate)}</td><th>إلى</th><td>${fmtDate(r.endDate)}</td></tr>
         <tr><th>المدة</th><td>${r.unit === "hour" ? num(r.hours) + " ساعة (" + days(r.total) + ")" : days(r.total)}</td><th>الصرف</th><td>${w ? "—" : `${PAY[r.pay] || "—"}${r.pay !== "paid" && payText(r) ? `<div class="sub">${payText(r)}</div>` : ""}`}</td></tr>
+        ${r.accrualReversed ? `<tr><th>استرجاع استحقاق</th><td colspan="3">${days(r.accrualReversed)} — عن أشهر الإجازة اللي سبق احتسابها (لا يُستحق رصيد عن مدة ${esc(r.typeName)})</td></tr>` : ""}
         ${w ? `<tr><th>الإجازة المسحوبة</th><td>طلب ${esc(r.originalSerial)}</td><th>أُعيد للرصيد</th><td>${days(r.refund || 0)}</td></tr>` : ""}
         <tr><th>${fieldName} قبل</th><td>${r.balanceBefore != null ? days(r.balanceBefore) : "—"}</td><th>${fieldName} بعد</th><td><b>${r.balanceAfter != null ? days(r.balanceAfter) : "—"}</b></td></tr>
         ${r.reason ? `<tr><th>${w ? "سبب السحب" : "ملاحظات"}</th><td colspan="3">${esc(r.reason)}</td></tr>` : ""}
@@ -530,7 +532,7 @@ function calcView() {
           <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
           <li><b>مرضية:</b> تنخصم من الرصيد المرضي.</li>
           <li><b>غياب:</b> أيامه توقف الاستحقاق، أو اختر "يُخصم من الرصيد" بالسطر إذا تنخصم من الإجازات.</li>
-          <li><b>أمومة، بدون راتب، طويلة:</b> ما تنخصم، بس أيامها توقف الاستحقاق. إذا قطعها، اكتب تاريخ رجوعه الفعلي كتاريخ نهاية.</li>
+          <li><b>حمل ووضع، أمومة، بدون راتب، طويلة:</b> ما تنخصم، بس أيامها توقف الاستحقاق. إذا قطعها، اكتب تاريخ رجوعه الفعلي كتاريخ نهاية.</li>
         </ul>
       </form>
       <aside class="card summary calc-sheet" id="calcResult">${calcResult()}</aside>

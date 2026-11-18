@@ -1,6 +1,6 @@
 // طبقة البيانات: Firebase (Auth + Firestore) مع تزامن لحظي وتخزين محلي عند انقطاع النت.
-import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181323";
-import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181323";
+import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181337";
+import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan, retroAccrualOverpaid } from "./rules.js?v=202611181337";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const APP_ROLES = ["superadmin", "admin", "assistant"];
@@ -97,7 +97,11 @@ export async function initStore() {
     for (const e of state.employees.filter((x) => x.active !== false && (x.accruedThrough || "") < target)) {
       await F.runTransaction(db, async (t) => {
         const s = await t.get(ref("employees", e.id));
-        const a = accrualFor({ id: s.id, ...s.data() }, state.settings.rules, target);
+        const pauseTypes = state.settings.rules.types.filter((x) => x.pausesAccrual).map((x) => x.key);
+        const pauses = state.requests
+          .filter((r) => r.employeeId === e.id && r.kind !== "withdrawal" && r.status === "approved" && !r.deleted && pauseTypes.includes(r.type))
+          .map((r) => ({ from: r.startDate, to: r.endDate || r.startDate }));
+        const a = accrualFor({ id: s.id, ...s.data() }, state.settings.rules, target, pauses);
         if (!a) return;
         t.update(ref("employees", e.id), { balance: a.balance, sick: a.sick, accruedThrough: target, updatedAt: now() });
         const sys = { at: now(), by: "system", byName: "النظام (تلقائي)", auto: true, employeeId: e.id };
@@ -234,6 +238,14 @@ export async function initStore() {
           const before = round2(e[field] || 0), after = round2(before + refund);
           Object.assign(upd, { refund, balanceBefore: before, balanceAfter: after, balanceField: field });
           if (refund) { t.update(eRef, { [field]: after, updatedAt: now() }); ledger(refund, after, `سحب إجازة ${o.typeName} — طلب ${o.serial}`); }
+          // إذا انسترجع استحقاق بسبب هالإجازة (أمومة/وضع/بدون راتب)، يرجع للرصيد عند سحبها
+          if (o.accrualReversed > 0) {
+            const base = refund ? after : round2(e.balance || 0);
+            const nb = round2(base + o.accrualReversed);
+            t.update(eRef, { balance: nb, updatedAt: now() });
+            t.set(ref("ledger", uid()), { employeeId: r.employeeId, field: "balance", delta: o.accrualReversed, after: nb, reason: `إرجاع الاستحقاق بعد سحب ${o.typeName} — طلب ${o.serial}`, requestId: id, at: now(), ...me() });
+            Object.assign(upd, { refund: round2(refund + o.accrualReversed), balanceAfter: nb, balanceField: "balance" });
+          }
           t.update(oRef, { status: "withdrawn", withdrawnAt: now(), withdrawnBy: state.user.uid, withdrawnByName: state.user.name, withdrawalId: id });
         } else if (approve) {
           const type = state.settings.rules.types.find((x) => x.key === r.type) || { deducts: r.deducts, unit: r.unit, fixedPay: r.pay === "unpaid" ? "unpaid" : "paid" };
@@ -241,6 +253,16 @@ export async function initStore() {
           const before = round2(e[field] || 0), after = plan.fromBalance ? round2(before - plan.paid) : before;
           Object.assign(upd, { pay: plan.pay, paid: plan.paid, half: plan.half, unpaid: plan.unpaid, balanceBefore: before, balanceAfter: after, balanceField: field });
           if (plan.fromBalance && plan.paid > 0) { t.update(eRef, { [field]: after, updatedAt: now() }); ledger(-plan.paid, after, `إجازة ${r.typeName} — طلب ${r.serial}`); }
+          // أمومة / وضع / بدون راتب بأثر رجعي: نسترجع الاستحقاق اللي انضاف عن أشهرها
+          if (type.pausesAccrual) {
+            const over = retroAccrualOverpaid(e, state.settings.rules, r.startDate, r.endDate);
+            if (over > 0) {
+              const nb = round2((e.balance || 0) - over);
+              t.update(eRef, { balance: nb, updatedAt: now() });
+              t.set(ref("ledger", uid()), { employeeId: r.employeeId, field: "balance", delta: -over, after: nb, reason: `استرجاع استحقاق عن مدة ${r.typeName} (طلب ${r.serial}) — لا يُستحق رصيد عنها`, requestId: id, at: now(), ...me() });
+              Object.assign(upd, { accrualReversed: over, balanceAfter: nb, balanceField: "balance" });
+            }
+          }
         }
         t.update(rRef, upd);
       });

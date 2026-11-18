@@ -16,9 +16,9 @@ export const DEFAULT_RULES = {
     // م43: يوم عن كل 10 أيام خدمة = 3 أيام بالشهر، تتراكم بدون حد للإجازة
     // (حد الـ180 يوم بالقانون يخص احتساب الرصيد عند التقاعد فقط، فما ينطبق هنا)
     // ولا يمنح أكثر من 120 يوم براتب بالمرة الواحدة
-    staff:    { accrual: "monthly", amount: 3, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 60 },
+    staff:    { accrual: "monthly", amount: 3, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 730 },
     // م10 خدمة جامعية: 15 يوم عن كل سنة دراسية تتراكم، ولا يمنح أكثر من 30 يوم خلال السنة الدراسية الواحدة
-    teaching: { accrual: "academic", amount: 15, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 60 }
+    teaching: { accrual: "academic", amount: 15, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 730 }
   },
   // deducts: balance (الرصيد الاعتيادي) | sick (الرصيد المرضي) | none
   // fixedPay لأنواع لا تخصم: paid | unpaid
@@ -26,8 +26,10 @@ export const DEFAULT_RULES = {
     { key: "ordinary",   name: "اعتيادية",            deducts: "balance", unit: "day",  for: ["staff", "teaching"] },
     { key: "hourly",     name: "زمنية (ساعية)",       deducts: "balance", unit: "hour", for: ["staff", "teaching"] },
     { key: "sick",       name: "مرضية",               deducts: "sick",    unit: "day",  for: ["staff", "teaching"] },
-    { key: "unpaid",     name: "بدون راتب",           deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "unpaid" },
-    { key: "maternity",  name: "أمومة / وضع",         deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid" },
+    // pausesAccrual: مدة الإجازة ما ينحسبلها استحقاق (لا تُمنح إجازة اعتيادية عن إجازة أخرى، والبدون راتب لا تُعد خدمة)
+    { key: "unpaid",     name: "بدون راتب",           deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "unpaid", pausesAccrual: true },
+    { key: "delivery",   name: "حمل ووضع (قبل وبعد الولادة)", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
+    { key: "maternity",  name: "أمومة (رعاية طفل)",   deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
     { key: "summer",     name: "العطلة الصيفية",      deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
     { key: "sabbatical", name: "تفرغ علمي",           deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
     { key: "study",      name: "دراسية",              deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid" },
@@ -114,7 +116,7 @@ export function payPlan({ type, total, employee, rules, requests, startDate, exc
   if (avail >= total) out.paid = total;
   else if (split && avail > 0) { out.paid = avail; out.unpaid = round2(total - avail); }
   else out.unpaid = total;
-  if (out.unpaid > 0 && c.maxUnpaidPerLeave > 0 && out.unpaid > c.maxUnpaidPerLeave) out.notes.push(`تنبيه: بدون راتب أكثر من ${c.maxUnpaidPerLeave} يوم (م43/4)`);
+  if (out.unpaid > 0 && c.maxUnpaidPerLeave > 0 && out.unpaid > c.maxUnpaidPerLeave) out.notes.push(`تنبيه: بدون راتب أكثر من ${c.maxUnpaidPerLeave} يوم (قرار 418 لسنة 1987: لحد سنتين)`);
   const pay = out.unpaid ? (out.paid ? "partial" : "unpaid") : "paid";
   return { ...out, pay, fromBalance: true };
 }
@@ -129,25 +131,76 @@ export function payText(r) {
 }
 
 // الاستحقاق التلقائي من آخر شهر محتسب لغاية الشهر الحالي
-export function accrualFor(emp, rules, target = monthKey()) {
+// pauses: فترات الإجازات اللي توقف الاستحقاق (أمومة، حمل ووضع، بدون راتب) [{from, to}]
+//  • الموظف: لكل شهر مكتمل ينضاف 3 أيام × (أيام الشهر بدون الفترات الموقوفة ÷ أيام الشهر)
+//  • التدريسي: ببداية السنة الدراسية 15 يوم × (1 − الأيام الموقوفة بالسنة الدراسية الماضية ÷ 365)
+//  • المرضي: بكانون الثاني 30 يوم × (1 − الأيام الموقوفة بالسنة الماضية ÷ 365)
+const dayMs = 86400000;
+function overlapDays(pauses, fromStr, toStr) {
+  const lo = new Date(fromStr + "T00:00:00").getTime(), hi = new Date(toStr + "T00:00:00").getTime();
+  const iv = (pauses || []).filter((p) => p.from && p.to)
+    .map((p) => [Math.max(lo, new Date(p.from + "T00:00:00").getTime()), Math.min(hi, new Date(p.to + "T00:00:00").getTime())])
+    .filter(([x, y]) => y >= x).sort((p, q) => p[0] - q[0]);
+  let total = 0, cur = null;
+  for (const [x, y] of iv) { if (!cur || x > cur[1] + dayMs) { if (cur) total += (cur[1] - cur[0]) / dayMs + 1; cur = [x, y]; } else cur[1] = Math.max(cur[1], y); }
+  if (cur) total += (cur[1] - cur[0]) / dayMs + 1;
+  return Math.round(total);
+}
+const ymd = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const lastDay = (y, m) => new Date(y, m, 0).getDate();
+
+export function accrualFor(emp, rules, target = monthKey(), pauses = []) {
   const c = rules.categories[emp.category];
   const from = emp.accruedThrough;
   if (!c || !from || from >= target) return null;
   let [y, m] = from.split("-").map(Number);
-  let bal = round2(emp.balance), sick = round2(emp.sick);
+  const bal = round2(emp.balance), sick = round2(emp.sick);
   const labels = [];
-  let addB = 0, addS = 0;
+  let addB = 0, addS = 0, pausedTotal = 0;
   while (true) {
+    // الشهر المكتمل (y, m) — نوصل للشهر اللي بعده
+    const py = y, pm = m;
     m++; if (m > 12) { m = 1; y++; }
     const k = `${y}-${String(m).padStart(2, "0")}`;
     if (k > target) break;
-    if (c.accrual === "monthly") addB += c.amount;
-    if (c.accrual === "academic" && m === rules.academicYearStartMonth) { addB += c.amount; labels.push(`رصيد السنة الدراسية ${y}/${y + 1}`); }
-    if (m === 1 && rules.sickAnnual) { addS += rules.sickAnnual; labels.push(`رصيد مرضي ${y}`); }
+    if (c.accrual === "monthly") {
+      const dim = lastDay(py, pm);
+      const paused = overlapDays(pauses, ymd(py, pm, 1), ymd(py, pm, dim));
+      pausedTotal += paused;
+      addB += c.amount * (dim - paused) / dim;
+    }
+    if (c.accrual === "academic" && m === rules.academicYearStartMonth) {
+      const paused = overlapDays(pauses, ymd(y - 1, m, 1), ymd(y, m, 1));
+      pausedTotal += paused;
+      addB += c.amount * Math.max(0, 1 - paused / 365);
+      labels.push(`رصيد السنة الدراسية ${y}/${y + 1}${paused ? ` (موقوف ${paused} يوم)` : ""}`);
+    }
+    if (m === 1 && rules.sickAnnual) {
+      const paused = overlapDays(pauses, ymd(y - 1, 1, 1), ymd(y - 1, 12, 31));
+      addS += rules.sickAnnual * Math.max(0, 1 - paused / 365);
+      labels.push(`رصيد مرضي ${y}`);
+    }
   }
-  let newB = round2(bal + addB);
-  const label = c.accrual === "monthly" ? `استحقاق لغاية ${target}` : (labels.join(" · ") || `تحديث ${target}`);
-  return { target, balance: newB, dBalance: round2(newB - bal), sick: round2(sick + addS), dSick: addS, label };
+  const newB = round2(bal + addB), newS = round2(sick + addS);
+  const label = c.accrual === "monthly"
+    ? `استحقاق لغاية ${target}${pausedTotal ? ` (موقوف ${pausedTotal} يوم: أمومة/وضع/بدون راتب)` : ""}`
+    : (labels.join(" · ") || `تحديث ${target}`);
+  return { target, balance: newB, dBalance: round2(newB - bal), sick: newS, dSick: round2(newS - sick), label };
+}
+
+// إجازة توقف الاستحقاق انسجلت بأثر رجعي: كم انضاف عن أشهرها اللي سبق احتسابها (حتى يُسترجع)
+export function retroAccrualOverpaid(emp, rules, from, to) {
+  const c = rules.categories[emp.category];
+  if (!c || c.accrual !== "monthly" || !emp.accruedThrough || !from) return 0;
+  let [y, m] = from.slice(0, 7).split("-").map(Number);
+  let total = 0;
+  while (`${y}-${String(m).padStart(2, "0")}` < emp.accruedThrough) {   // الأشهر المحتسبة سابقاً
+    const dim = lastDay(y, m);
+    total += c.amount * overlapDays([{ from, to: to || from }], ymd(y, m, 1), ymd(y, m, dim)) / dim;
+    m++; if (m > 12) { m = 1; y++; }
+    if (`${y}-${String(m).padStart(2, "0")}` > (to || from).slice(0, 7)) break;
+  }
+  return round2(total);
 }
 
 // حاسبة الاستحقاق من تاريخ المباشرة
