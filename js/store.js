@@ -1,6 +1,6 @@
 // طبقة البيانات: Firebase (Auth + Firestore) مع تزامن لحظي وتخزين محلي عند انقطاع النت.
-import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181154";
-import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181154";
+import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181225";
+import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181225";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const APP_ROLES = ["superadmin", "admin", "assistant"];
@@ -46,7 +46,29 @@ export async function initStore() {
   ]);
   const app = initializeApp(firebaseConfig);
   const auth = A.getAuth(app);
-  const db = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) });
+  // وضع الاتصال: عادي (مع تخزين محلي) أو متوافق (long polling بدون تخزين) إذا الشبكة أو المتصفح يمنع الاتصال العادي
+  const LP_KEY = "arch-leave-compat";
+  let compat = false;
+  try { compat = localStorage.getItem(LP_KEY) === "1"; } catch {}
+  let db;
+  try {
+    db = compat
+      ? F.initializeFirestore(app, { localCache: F.memoryLocalCache(), experimentalForceLongPolling: true })
+      : F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }), experimentalAutoDetectLongPolling: true });
+  } catch (e) {
+    console.warn("firestore init fallback", e);
+    db = F.initializeFirestore(app, { localCache: F.memoryLocalCache(), experimentalForceLongPolling: true });
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function loadProfile(id) {
+    let last;
+    for (let i = 0; i < 4; i++) {
+      try { const s = await F.getDocFromServer(F.doc(db, "users", id)); return s.data(); }
+      catch (e) { last = e; if (e.code === "permission-denied") break; await sleep(1200 * (i + 1)); }
+    }
+    try { const s = await F.getDocFromCache(F.doc(db, "users", id)); if (s.exists()) return s.data(); } catch {}
+    throw last;
+  }
   const col = (n) => F.collection(db, n);
   const ref = (n, id) => F.doc(db, n, id);
   let unsubs = [], accrualDone = false;
@@ -94,15 +116,23 @@ export async function initStore() {
       unsubs.forEach((f) => f()); unsubs = []; accrualDone = false;
       if (!u) { state.user = null; state.ready = true; emit(); return res(); }
       try {
-        const d = (await F.getDoc(ref("users", u.uid))).data();
+        const d = await loadProfile(u.uid);
         if (!d || !d.active || !APP_ROLES.includes(d.role)) throw new Error("inactive");
         state.user = { uid: u.uid, username: d.username, name: d.name, role: d.role };
         state.loginError = "";
         listen();
       } catch (err) {
         console.error("login profile", err);
+        // أول فشل اتصال: نجرب الوضع المتوافق تلقائياً (الجلسة تبقى، فيدخل وحده بعد إعادة التحميل)
+        if (err.message !== "inactive" && err.code !== "permission-denied" && !compat) {
+          try { localStorage.setItem(LP_KEY, "1"); } catch {}
+          location.reload();
+          return;
+        }
         state.user = null;
-        state.loginError = err.message === "inactive" ? "هذا الحساب موقوف أو غير مخوّل" : "تعذر تحميل بيانات الحساب";
+        state.loginError = err.message === "inactive" ? "هذا الحساب موقوف أو غير مخوّل"
+          : `تعذر تحميل بيانات الحساب (${err.code || err.message}). تأكد من الإنترنت، وإذا عندك مانع إعلانات أوقفه لهذا الموقع، أو جرّب متصفح ثاني.`;
+        try { localStorage.removeItem(LP_KEY); } catch {}
         await A.signOut(auth);
       }
       state.ready = true; emit(); res();
