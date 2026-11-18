@@ -1,6 +1,6 @@
 // طبقة البيانات: Firebase (Auth + Firestore) مع تزامن لحظي وتخزين محلي عند انقطاع النت.
-import { firebaseConfig, USER_DOMAIN } from "./config.js";
-import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js";
+import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181154";
+import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan } from "./rules.js?v=202611181154";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const APP_ROLES = ["superadmin", "admin", "assistant"];
