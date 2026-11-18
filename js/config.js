@@ -13,7 +13,7 @@ export const firebaseConfig = {
 export const USER_DOMAIN = "arch-leave.app";
 
 export const COLLEGE = {
-  name: "كلية الهندسة المعمارية",
-  university: "",          // اسم الجامعة — يتعدل من الإعدادات
+  name: "كلية هندسة العمارة",
+  university: "الجامعة التكنولوجية",
   system: "نظام الإجازات"
 };

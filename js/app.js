@@ -13,6 +13,7 @@ const fmtDate = (iso) => iso ? new Date(iso.length <= 10 ? iso + "T00:00:00" : i
 const fmtDT = (iso) => iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—";
 const today = () => new Date().toISOString().slice(0, 10);
 const S = () => getState();
+const uni = () => S().settings.university || COLLEGE.university;
 const isAdmin = () => S().user?.role === "admin";
 const typeOf = (key) => S().settings.rules.types.find((t) => t.key === key);
 const empById = (id) => S().employees.find((e) => e.id === id);
@@ -28,8 +29,8 @@ let lastPendingIds = null;
 const ui = { empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", q: "" }, newReq: {} };
 
 /* -------------------------------- shell -------------------------------- */
-function logoHTML(size = 44) {
-  const src = S().settings.logo || "assets/logo.png";
+function logoHTML(size = 44, full = false) {
+  const src = S().settings.logo || (full ? "assets/logo-full.png" : "assets/logo.png");
   return `<span class="logo" style="--s:${size}px"><img src="${esc(src)}" alt="شعار الكلية" onerror="this.remove()"><span class="logo-fallback">ك.ع</span></span>`;
 }
 
@@ -48,7 +49,7 @@ function shell(content, active) {
   return `
   ${isLive ? "" : `<div class="demo-bar">وضع تجريبي — البيانات محفوظة بهذا المتصفح فقط لحين ربط قاعدة البيانات</div>`}
   <header class="top">
-    <div class="brand">${logoHTML(42)}<div><div class="brand-t">${esc(COLLEGE.name)}</div><div class="brand-s">${esc(S().settings.university || COLLEGE.system)}</div></div></div>
+    <div class="brand">${logoHTML(42)}<div><div class="brand-t">${esc(COLLEGE.name)}</div><div class="brand-s">${esc(uni())} · ${COLLEGE.system}</div></div></div>
     <div class="top-end">
       <span class="sync ${sync[0]}" title="${sync[1]}"><i></i>${sync[1]}</span>
       <div class="me"><div class="me-n">${esc(u.name)}</div><div class="me-r">${ROLES[u.role]}</div></div>
@@ -68,7 +69,7 @@ function loginView(bootstrap) {
   app.innerHTML = `
   <div class="login">
     <form class="login-card" id="loginForm" autocomplete="on">
-      <div class="login-head">${logoHTML(76)}<h1>${esc(COLLEGE.name)}</h1><p>${COLLEGE.system}${S().settings.university ? " — " + esc(S().settings.university) : ""}</p></div>
+      <div class="login-head">${logoHTML(150, true)}<h1>${COLLEGE.system}</h1><p>${esc(uni())}</p></div>
       ${bootstrap ? `<div class="note">أول تشغيل: أنشئ حساب مسؤول النظام.</div>
         <label>الاسم الكامل<input name="name" required></label>` : ""}
       <label>اسم المستخدم<input name="username" required autocomplete="username" dir="ltr"></label>
@@ -451,7 +452,7 @@ function settingsView() {
         <form class="card form" id="collegeForm">
           <div class="card-h"><h3>هوية الكلية</h3></div>
           <div class="logo-edit">${logoHTML(64)}<label class="btn sm">رفع الشعار<input type="file" accept="image/*" id="logoFile" hidden></label>${s.logo ? `<button type="button" class="btn ghost sm" data-act="logo-clear">إزالة</button>` : ""}</div>
-          <label>اسم الجامعة<input name="university" value="${esc(s.university)}" placeholder="مثال: جامعة …"></label>
+          <label>اسم الجامعة<input name="university" value="${esc(uni())}"></label>
           <button class="btn primary">حفظ</button>
         </form>
         <div class="card">
@@ -572,7 +573,7 @@ function printRequest(id) {
   const box = $("#print");
   box.innerHTML = `
   <div class="pr">
-    <header>${logoHTML(80)}<div><div>${esc(s.university || "")}</div><div class="pr-c">${esc(COLLEGE.name)}</div><div>${COLLEGE.system}</div></div>
+    <header>${logoHTML(80)}<div><div>${esc(uni())}</div><div class="pr-c">${esc(COLLEGE.name)}</div><div>${COLLEGE.system}</div></div>
       <div class="pr-meta"><div>العدد: ${esc(r.serial)}</div><div>التاريخ: ${fmtDate(r.decidedAt)}</div></div></header>
     <h1>إشعار منح إجازة ${esc(r.typeName)}</h1>
     <table>
