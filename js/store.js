@@ -1,6 +1,6 @@
 // طبقة البيانات: Firebase (Auth + Firestore) مع تزامن لحظي وتخزين محلي عند انقطاع النت.
-import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611181337";
-import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan, retroAccrualOverpaid } from "./rules.js?v=202611181337";
+import { firebaseConfig, USER_DOMAIN } from "./config.js?v=202611190841";
+import { DEFAULT_RULES, round2, monthKey, accrualFor, payPlan, retroAccrualOverpaid } from "./rules.js?v=202611190841";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const APP_ROLES = ["superadmin", "admin", "assistant"];
@@ -160,11 +160,11 @@ export async function initStore() {
 
     // ---------- المنتسبون ----------
     async saveEmployee(e) {
-      const info = { name: e.name.trim(), category: e.category, department: e.department || "", title: e.title || "", empNo: e.empNo || "", notes: e.notes || "", updatedAt: now() };
+      const info = { name: e.name.trim(), category: e.category, department: e.department || "", title: e.title || "", empNo: e.empNo || "", startDate: e.startDate || "", notes: e.notes || "", updatedAt: now() };
       if (e.id) return F.updateDoc(ref("employees", e.id), info);
       const id = uid(), balance = round2(e.balance), sick = round2(e.sick === "" || e.sick == null ? 30 : e.sick);
       const b = F.writeBatch(db);
-      b.set(ref("employees", id), { ...info, active: true, balance, sick, accruedThrough: monthKey(), createdAt: now() });
+      b.set(ref("employees", id), { ...info, ...(e.calc ? { calc: e.calc } : {}), active: true, balance, sick, accruedThrough: monthKey(), createdAt: now() });
       b.set(ref("ledger", uid()), { employeeId: id, field: "balance", delta: balance, after: balance, reason: "رصيد افتتاحي", at: now(), ...me() });
       b.set(ref("ledger", uid()), { employeeId: id, field: "sick", delta: sick, after: sick, reason: "رصيد مرضي افتتاحي", at: now(), ...me() });
       await b.commit();
@@ -179,6 +179,10 @@ export async function initStore() {
         }
         await b.commit();
       }
+    },
+    // حفظ تفاصيل حاسبة الرصيد (تاريخ المباشرة + الإجازات المدخلة) على سجل المنتسب
+    async saveCalc(id, calc) {
+      await F.updateDoc(ref("employees", id), { startDate: calc.start || "", calc: { ...calc, savedAt: now(), savedByName: state.user.name }, updatedAt: now() });
     },
     async archiveEmployee(id, active) { await F.updateDoc(ref("employees", id), { active, updatedAt: now() }); },
     // حذف المنتسب (سوبر أدمن): يختفي من النظام، ويبقى سجله بالنسخ الاحتياطية

@@ -440,3 +440,11 @@ span.flatpickr-weekday { font-size: 12.5px; font-weight: 600; color: var(--ink-3
   .flatpickr-innerContainer, .flatpickr-rContainer, .flatpickr-days, .dayContainer { width: calc(100vw - 44px) !important; min-width: 0; max-width: none; }
   .flatpickr-day { height: 42px; line-height: 42px; }
 }
+
+.calc-details { margin-bottom: 20px; border-inline-start: 3px solid var(--navy); }
+.calc-details.empty-cd { border-inline-start-color: var(--line); }
+.calc-details tr.cd-pause td { background: #fbfaff; }
+.calc-details tr.cd-absence td { background: #fffbf3; }
+.calc-details tr.cd-sick td:first-child b { color: #1d4ed8; }
+.cd-sum { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); font-size: 14px; color: var(--ink-2); }
+.cd-sum b { color: var(--navy); }
