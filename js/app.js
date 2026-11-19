@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191234";
-import { COLLEGE } from "./config.js?v=202611191234";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191234";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191234";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191234";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191234";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191247";
+import { COLLEGE } from "./config.js?v=202611191247";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191247";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191247";
+import { initDatePickers, setDateMin, setDateValue, parseLooseDate } from "./datepicker.js?v=202611191247";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191247";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -66,6 +66,20 @@ function overlaps(list) {
   return list.map((a, i) => { const x = span(a); if (!x) return [];
     return list.map((b, j) => { if (i === j) return 0; const y = span(b); return y && x[0] <= y[1] && y[0] <= x[1] ? j + 1 : 0; }).filter(Boolean); });
 }
+// بحث بالتاريخ: سنة (2021)، شهر (2021/10 أو 10/2021)، أو يوم كامل بأي صيغة — يرجع [من، إلى]
+function dateQuery(text) {
+  const t = String(text || "").trim().replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+  if (!t) return null;
+  const full = parseLooseDate(t); if (full) return [full, full];
+  let m;
+  const last = (y, mo) => new Date(y, mo, 0).getDate();
+  if ((m = t.match(/^(\d{4})\D+(\d{1,2})\D*$/))) { const y = +m[1], mo = +m[2]; if (mo >= 1 && mo <= 12) return [`${y}-${String(mo).padStart(2, "0")}-01`, `${y}-${String(mo).padStart(2, "0")}-${last(y, mo)}`]; }
+  if ((m = t.match(/^(\d{1,2})\D+(\d{4})$/))) { const y = +m[2], mo = +m[1]; if (mo >= 1 && mo <= 12) return [`${y}-${String(mo).padStart(2, "0")}-01`, `${y}-${String(mo).padStart(2, "0")}-${last(y, mo)}`]; }
+  if ((m = t.match(/^(\d{4})\D*$/))) return [`${m[1]}-01-01`, `${m[1]}-12-31`];
+  return "bad";
+}
+const inQuery = (r, q) => { if (!q) return true; if (q === "bad" || !r.from) return false; const to = r.to && r.to >= r.from ? r.to : r.from; return r.from <= q[1] && q[0] <= to; };
+const searchBox = (id, val) => `<div class="leave-search noprint"><i data-lucide="search"></i><input id="${id}" value="${esc(val || "")}" placeholder="ابحث بالتاريخ: 2021 أو 2021/10 أو 2021/10/15" inputmode="numeric" autocomplete="off" dir="auto"></div>`;
 const autoEnd = (r) => endDateFor(r.from, r.days, R(), true);
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
@@ -273,16 +287,32 @@ function calcDetailsCard(e) {
   return `<div class="card calc-details">
     <div class="card-h"><h3>تفاصيل الإجازات السابقة</h3>
       <span class="actions"><span class="muted small">مباشرة ${fmtDate(cd.start)} · محسوبة لغاية ${fmtDate(cd.asOf)} · ${esc(cd.savedByName || "")}</span>${isSuper() ? `<a class="btn sm" href="#/calc?emp=${e.id}"><i data-lucide="pencil"></i>تعديل / إضافة إجازة</a>` : ""}</span></div>
+    ${searchBox("cdSearch", ui.cdQ)}
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>النوع</th><th>التاريخ</th><th>المدة والأثر</th><th>ملاحظة</th></tr></thead>
-      <tbody>${sortLeaves(cd.rows).map((r) => `<tr class="cd-${(CALC_TYPES[r.type] || {}).effect}">
-        <td><b>${esc((CALC_TYPES[r.type] || {}).name || r.type)}</b></td>
-        <td>${r.from ? fmtDate(r.from) : "—"}${r.to ? " ← " + fmtDate(r.to) : ""}</td>
-        <td>${eff(r)}</td>
-        <td class="sub">${esc(r.note) || "—"}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th>المدة والأثر</th><th>ملاحظة</th></tr></thead>
+      <tbody id="cdBody">${cdRows(e)}</tbody>
     </table></div>
     <div class="cd-sum"><span>المستحق <b>${days(res.ordinary || 0)}</b></span><span>المأخوذ <b>${days(res.taken || 0)}</b></span>${res.paused ? `<span>أيام موقوفة <b>${res.paused}</b></span>` : ""}<span>الرصيد عند الاعتماد <b>${days(res.balance || 0)}</b></span><span>المرضي <b>${days(res.sickLeft || 0)}</b></span></div>
   </div>`;
+}
+
+function cdRows(e) {
+  const list = sortLeaves(e.calc?.rows || []), dup = overlaps(list), q = dateQuery(ui.cdQ), hpd = R().hoursPerDay;
+  const eff = (r) => {
+    const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+    if (t.effect === "pause") return `${num(rowDays(r))} يوم — توقف الاستحقاق`;
+    if (t.input === "hours") return `${num(r.hours)} ساعة = ${num(round2((Number(r.hours) || 0) / hpd))} يوم — من الاعتيادي`;
+    if (r.type === "absence") return `${num(r.days)} يوم — ${r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق"}`;
+    return `${num(r.days)} يوم — ${t.effect === "sick" ? "من المرضي" : "من الاعتيادي"}`;
+  };
+  const rows = list.map((r, i) => [r, i]).filter(([r]) => inQuery(r, q));
+  if (!rows.length) return `<tr><td colspan="5" class="empty">${q === "bad" ? "اكتب التاريخ مثل 2021 أو 2021/10 أو 2021/10/15" : "ماكو إجازات بهذا التاريخ"}</td></tr>`;
+  return rows.map(([r, i]) => `<tr class="cd-${(CALC_TYPES[r.type] || {}).effect}${dup[i].length ? " is-dup" : ""}">
+        <td class="mono">${i + 1}</td>
+        <td><b>${esc((CALC_TYPES[r.type] || {}).name || r.type)}</b></td>
+        <td><span class="nw">${r.from ? fmtDate(r.from) : "—"}${r.to && r.to !== r.from ? " ← " + fmtDate(r.to) : ""}</span>${dup[i].length ? `<span class="dup-tag"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td>
+        <td>${eff(r)}</td>
+        <td class="sub">${esc(r.note) || "—"}</td></tr>`).join("");
 }
 
 async function fillLedger(id) {
@@ -694,10 +724,12 @@ function calcSavedTable() {
   const sick = sum((r) => r.type === "sick");
   const pause = sum((r) => CALC_TYPES[r.type]?.effect === "pause" || (r.type === "absence" && r.mode !== "deduct"));
   const dup = overlaps(list), nDup = dup.filter((d) => d.length).length;
+  const q = dateQuery(ui.calc.q), shown = list.map((r, i) => i).filter((i) => inQuery(list[i], q));
   return `<div class="calc-sys">${head}
+    ${searchBox("calcSearch", ui.calc.q)}
     ${nDup ? `<div class="note warn"><i data-lucide="copy"></i> أكو ${nDup} إجازات تواريخها متداخلة ويه إجازات ثانية (معلّمة بالأحمر). تأكد منها حتى ما تنحسب مرتين.</div>` : ""}
     <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
-    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td><span class="nw">${x.when}</span>${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
+    <tbody>${!shown.length ? `<tr><td colspan="7" class="empty">${q === "bad" ? "اكتب التاريخ مثل 2021 أو 2021/10 أو 2021/10/15" : "ماكو إجازات بهذا التاريخ"}</td></tr>` : ""}${shown.map((i) => { const r = list[i]; const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td><span class="nw">${x.when}</span>${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
       <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل" aria-label="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف" aria-label="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody>
     <tfoot><tr><td colspan="7">المجموع: ${ord ? `اعتيادي <b>${num(ord)}</b> يوم` : ""}${sick ? ` · مرضي <b>${num(sick)}</b> يوم` : ""}${pause ? ` · بدون استحقاق <b>${num(pause)}</b> يوم` : ""}</td></tr></tfoot></table></div></div>`;
 }
@@ -857,7 +889,7 @@ function summaryCard(e) {
 function statementView(id) {
   const e = empById(id) || S().employees.find((x) => x.id === id);
   if (!e) return shell(`<p class="empty">المنتسب غير موجود.</p>`, "employees");
-  const list = allLeaves(e), sum = leaveSummary(e), cd = e.calc || {};
+  const list = allLeaves(e), sum = leaveSummary(e), cd = e.calc || {}, stDup = overlaps(list);
   const isT = e.category === "teaching";
   return shell(`
     <div class="page-head noprint"><div><a class="back" href="#/employee/${e.id}">→ ${esc(e.name)}</a><h2>كشف الإجازات</h2></div>
@@ -881,7 +913,7 @@ function statementView(id) {
         <tbody>${sum.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.count}</td><td>${g.hours ? `${num(g.hours)} ساعة (${num(g.days)} يوم)` : `${num(g.days)} يوم`}</td></tr>`).join("")}</tbody></table>` : ""}
       <h2 class="sh-sub">تفاصيل الإجازات</h2>
       ${list.length ? `<table class="compact"><thead><tr><th>ت</th><th>النوع</th><th>من</th><th>إلى</th><th>المدة</th><th>الأثر</th><th>المصدر</th></tr></thead>
-        <tbody>${list.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${l.from ? fmtDate(l.from) : "—"}</td><td>${l.to && l.to !== l.from ? fmtDate(l.to) : "—"}</td>
+        <tbody>${list.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}${stDup[i].length ? ` <b class="st-dup">(مكررة مع ${stDup[i].map((n) => n).join("، ")})</b>` : ""}</td><td>${l.from ? fmtDate(l.from) : "—"}</td><td>${l.to && l.to !== l.from ? fmtDate(l.to) : "—"}</td>
           <td>${l.hours ? `${num(l.hours)} س` : `${num(l.days)} يوم`}</td><td>${esc(l.effect)}</td><td>${l.src}${l.note ? ` · ${esc(l.note)}` : ""}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">لا توجد إجازات مسجلة.</p>`}
       ${cd.result ? `<p class="small sh-note">آخر احتساب بالحاسبة لغاية ${fmtDate(cd.asOf)}: المستحق ${days(cd.result.ordinary)} − المأخوذ ${days(cd.result.taken)}${cd.result.paused ? ` (أيام موقوفة ${cd.result.paused})` : ""}.</p>` : ""}
@@ -1201,6 +1233,8 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("input", (ev) => {
   const t = ev.target;
+  if (t.id === "cdSearch") { ui.cdQ = t.value; const e = empById(location.hash.split("/")[2]?.split("?")[0]); if (e && $("#cdBody")) { $("#cdBody").innerHTML = cdRows(e); icons(); } return; }
+  if (t.id === "calcSearch") { ui.calc.q = t.value; const pos = t.selectionStart; const sv = $("#calcSaved"); sv.innerHTML = calcSavedTable(); icons(); const n = $("#calcSearch"); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} return; }
   if (t.id === "empSearch") { ui.empSearch = t.value; $("#empTable").innerHTML = employeeTable(); }
   if (t.id === "reqSearch") { ui.reqFilter.q = t.value.trim(); $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
   if (t.closest && t.closest("#calcForm")) {
@@ -1329,6 +1363,7 @@ subscribe(() => {
     const busy = a && a.closest && a.closest("#calcForm") && a.tagName !== "SELECT" && a.tagName !== "BUTTON";
     clearTimeout(timer); timer = setTimeout(stale && !busy ? render : refreshCalc, 30); return;
   }
+  if (a && a.id === "cdSearch") return;
   if (a && ["empSearch", "reqSearch", "formsSearch"].includes(a.id)) { if ($("#empTable")) $("#empTable").innerHTML = employeeTable(); return; }
   clearTimeout(timer); timer = setTimeout(render, 30);
 });
