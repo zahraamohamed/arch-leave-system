@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191137";
-import { COLLEGE } from "./config.js?v=202611191137";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191137";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191137";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191137";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191137";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191138";
+import { COLLEGE } from "./config.js?v=202611191138";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191138";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191138";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191138";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191138";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -34,17 +34,26 @@ const ruleText = (cat) => {
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
 
 const newCalcRow = (type = "ordinary") => ({ type, from: "", to: "", days: "", hours: "", note: "", mode: "pause" });
-const PAUSE_HINT = "ما تنخصم من الرصيد، بس أيامها ما ينضاف عنها استحقاق. إذا قطعها، اكتب تاريخ رجوعه كتاريخ نهاية.";
+const PAUSE_HINT = "ما تنخصم من الرصيد، بس أيامها ما ينضاف عنها استحقاق. إذا قطعها، اكتب تاريخ رجوعه بخانة \"إلى\".";
 const CALC_TYPES = {
   ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي." },
   hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي — كل 7 ساعات = يوم." },
   sick:      { name: "مرضية",                    input: "days",   effect: "sick",    hint: "تنخصم من الرصيد المرضي." },
-  delivery:  { name: "حمل ووضع",                 input: "period", effect: "pause",   hint: PAUSE_HINT },
-  maternity: { name: "أمومة (رعاية طفل)",        input: "period", effect: "pause",   hint: PAUSE_HINT },
-  unpaid:    { name: "بدون راتب",                input: "period", effect: "pause",   hint: PAUSE_HINT },
-  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause", hint: PAUSE_HINT },
-  absence:   { name: "غياب",                     input: "absence", effect: "absence", hint: "اختر شلون ينحسب: يوقف الاستحقاق، أو ينخصم من الرصيد الاعتيادي." }
+  delivery:  { name: "حمل ووضع",                 input: "days", effect: "pause",   hint: PAUSE_HINT },
+  maternity: { name: "أمومة (رعاية طفل)",        input: "days", effect: "pause",   hint: PAUSE_HINT },
+  unpaid:    { name: "بدون راتب",                input: "days", effect: "pause",   hint: PAUSE_HINT },
+  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "days", effect: "pause", hint: PAUSE_HINT },
+  absence:   { name: "غياب",                     input: "days", effect: "absence", hint: "اختر شلون ينحسب: يوقف الاستحقاق، أو ينخصم من الرصيد الاعتيادي." }
 };
+// أيام السطر: الزمنية بالساعات، وفترات التوقف من التواريخ إذا موجودة، والباقي من خانة الأيام
+const rowDays = (r) => {
+  const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+  if (t.input === "hours") return round2((Number(r.hours) || 0) / R().hoursPerDay);
+  if (t.effect === "pause" && r.from && r.to) return periodDays(r.from, r.to);
+  return Number(r.days) || 0;
+};
+// الأيام التلقائية من "من" و"إلى": التوقف بالأيام التقويمية، والمخصومة حسب إعدادات العطل
+const autoDays = (r) => (!r.from || !r.to || r.to < r.from) ? "" : String((CALC_TYPES[r.type]?.effect === "pause" ? periodDays(r.from, r.to) : countDays(r.from, r.to, R())) || "");
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
@@ -242,9 +251,9 @@ function calcDetailsCard(e) {
   const hpd = R().hoursPerDay;
   const eff = (r) => {
     const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
-    if (t.input === "period") return `${periodDays(r.from, r.to)} يوم — توقف الاستحقاق`;
+    if (t.effect === "pause") return `${num(rowDays(r))} يوم — توقف الاستحقاق`;
     if (t.input === "hours") return `${num(r.hours)} ساعة = ${num(round2((Number(r.hours) || 0) / hpd))} يوم — من الاعتيادي`;
-    if (t.input === "absence") return `${num(r.days)} يوم — ${r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق"}`;
+    if (r.type === "absence") return `${num(r.days)} يوم — ${r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق"}`;
     return `${num(r.days)} يوم — ${t.effect === "sick" ? "من المرضي" : "من الاعتيادي"}`;
   };
   const res = cd.result || {};
@@ -601,24 +610,18 @@ function calcRows() {
   const c = ui.calc, r = c.rows[0] || (c.rows[0] = newCalcRow());
   const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
   const editing = c.editIdx != null;
-  const pd = periodDays(r.from, r.to);
-  const dateF = `<label><span>التاريخ <small class="muted">(اختياري)</small></span><input type="date" data-k="from" value="${esc(r.from)}"></label>`;
-  const fields = t.input === "period"
-    ? `<label>من تاريخ<input type="date" data-k="from" value="${esc(r.from)}"></label>
-       <label><span>إلى تاريخ <small class="muted">(أو تاريخ رجوعه)</small></span><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}"></label>
-       <div class="calc-out"><span>المدة</span><b class="calc-days">${pd ? `${pd} يوم` : "—"}</b></div>`
-    : t.input === "hours"
-      ? `${dateF}<label>عدد الساعات<input type="number" data-k="hours" min="0" step="0.5" inputmode="decimal" value="${esc(r.hours)}"></label>
-         <div class="calc-out"><span>تساوي</span><b class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</b></div>`
-      : t.input === "absence"
-        ? `${dateF}<label>أيام الغياب<input type="number" data-k="days" min="0" step="0.5" inputmode="decimal" value="${esc(r.days)}"></label>
-           <label>شلون ينحسب<select data-k="mode"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>ينخصم من الرصيد</option></select></label>`
-        : `${dateF}<label>عدد الأيام<input type="number" data-k="days" min="0" step="0.5" inputmode="decimal" value="${esc(r.days)}"></label><div></div>`;
+  const fromF = `<label>من تاريخ<input type="date" data-k="from" value="${esc(r.from)}"></label>`;
+  const toF = `<label>إلى تاريخ<input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}"></label>`;
+  const fields = t.input === "hours"
+    ? `<label>التاريخ<input type="date" data-k="from" value="${esc(r.from)}"></label><label>عدد الساعات<input type="number" data-k="hours" min="0" step="0.5" inputmode="decimal" value="${esc(r.hours)}"></label>
+       <div class="calc-out"><span>تساوي</span><b class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</b></div>`
+    : `${fromF}${toF}<label><span>عدد الأيام <small class="muted">(ينحسب وحده أو اكتبه)</small></span><input type="number" data-k="days" min="0" step="0.5" inputmode="decimal" value="${esc(r.days)}"></label>
+       ${r.type === "absence" ? `<label>شلون ينحسب<select data-k="mode"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>ينخصم من الرصيد</option></select></label>` : ""}`;
   return `<div class="calc-draft eff-${t.effect}${editing ? " editing" : ""}" data-i="0">
     ${editing ? `<div class="calc-editing"><i data-lucide="pencil"></i>تعدّل الإجازة رقم ${c.editIdx + 1}</div>` : ""}
     <div class="lbl">نوع الإجازة</div>
     <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
-    <p class="calc-hint"><i data-lucide="info"></i>${t.hint}</p>
+    <p class="calc-hint"><i data-lucide="info"></i>${t.hint}${t.input === "hours" ? "" : " اختر من وإلى والأيام تنحسب وحدها، أو اكتب عدد الأيام مباشرة. التاريخ تكدر تختاره من التقويم أو تكتبه (مثل 2/2/2024)."}</p>
     <div class="calc-fields">${fields}</div>
     <label><span>ملاحظة <small class="muted">(اختياري)</small></span><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>
     <div class="actions">
@@ -639,9 +642,9 @@ const allCalcRows = () => {
 // نقل الأسطر المعبّأة من خانات الإدخال إلى جدول الإجازات
 function draftProblem(r) {
   const t = CALC_TYPES[r.type];
-  if (t.input === "period") { if (!r.from || !r.to) return "اكتب تاريخ البداية والنهاية"; if (r.to < r.from) return "تاريخ النهاية قبل البداية"; return ""; }
   if (t.input === "hours") return Number(r.hours) > 0 ? "" : "اكتب عدد الساعات";
-  return Number(r.days) > 0 ? "" : "اكتب عدد الأيام";
+  if (r.from && r.to && r.to < r.from) return "تاريخ \"إلى\" قبل \"من\"";
+  return Number(r.days) > 0 || (t.effect === "pause" && r.from && r.to) ? "" : "اكتب عدد الأيام، أو اختر من وإلى";
 }
 function commitDrafts() {
   const c = ui.calc, r = c.rows[0];
@@ -656,8 +659,8 @@ function commitDrafts() {
 }
 function calcRowText(r) {
   const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
-  const when = t.input === "period" ? `${fmtDate(r.from)} ← ${fmtDate(r.to)}` : (r.from ? fmtDate(r.from) : "—");
-  const amount = t.input === "period" ? `${periodDays(r.from, r.to)} يوم`
+  const when = r.from && r.to && r.to !== r.from ? `${fmtDate(r.from)} ← ${fmtDate(r.to)}` : (r.from ? fmtDate(r.from) : "—");
+  const amount = t.input !== "hours" ? `${num(rowDays(r))} يوم`
     : t.input === "hours" ? `${num(r.hours)} ساعة (${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم)` : `${num(r.days)} يوم`;
   const effect = r.type === "sick" ? "تنخصم من المرضي" : (r.type === "ordinary" || r.type === "hourly") ? "تنخصم من الاعتيادي"
     : r.type === "absence" && r.mode === "deduct" ? "ينخصم من الاعتيادي" : "بدون استحقاق";
@@ -669,9 +672,10 @@ function calcSavedTable() {
   const head = `<div class="step"><span>3</span>الإجازات المضافة${list.length ? ` <small class="muted">(${list.length})</small>` : ""}${ui.calc.dirty ? `<small class="pill warn">غير محفوظة بعد</small>` : ""}</div>`;
   if (!list.length) return `<div class="calc-sys">${head}<div class="calc-empty">ما مضاف إجازات بعد. أضفها من فوق وراح تطلع هنا.</div></div>`;
   const hpd = R().hoursPerDay;
-  const ord = round2(list.filter((r) => r.type === "ordinary" || (r.type === "absence" && r.mode === "deduct")).reduce((a, r) => a + (Number(r.days) || 0), 0) + list.filter((r) => r.type === "hourly").reduce((a, r) => a + (Number(r.hours) || 0), 0) / hpd);
-  const sick = round2(list.filter((r) => r.type === "sick").reduce((a, r) => a + (Number(r.days) || 0), 0));
-  const pause = list.filter((r) => CALC_TYPES[r.type]?.effect === "pause").reduce((a, r) => a + periodDays(r.from, r.to), 0) + list.filter((r) => r.type === "absence" && r.mode !== "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0);
+  const sum = (f) => round2(list.filter(f).reduce((a, r) => a + rowDays(r), 0));
+  const ord = sum((r) => r.type === "ordinary" || r.type === "hourly" || (r.type === "absence" && r.mode === "deduct"));
+  const sick = sum((r) => r.type === "sick");
+  const pause = sum((r) => CALC_TYPES[r.type]?.effect === "pause" || (r.type === "absence" && r.mode !== "deduct"));
   return `<div class="calc-sys">${head}
     <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
     <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td>${x.when}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
@@ -727,11 +731,13 @@ function calcMissingNote() {
 function calcData() {
   const c = ui.calc, rows = allCalcRows();
   const sys = systemLeavesFor(c.empId, c.start, c.asOf);
-  const periods = rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").map((r) => ({ from: r.from, to: r.to })).concat(sys.periods);
+  const pauseRows = rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause");
+  const periods = pauseRows.filter((r) => r.from && r.to).map((r) => ({ from: r.from, to: r.to })).concat(sys.periods);
+  const pauseNoDates = round2(pauseRows.filter((r) => !(r.from && r.to)).reduce((a, r) => a + (Number(r.days) || 0), 0));
   const absRows = rows.filter((r) => r.type === "absence");
   const absPause = round2(absRows.filter((r) => r.mode !== "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0));
   const absDeduct = round2(absRows.filter((r) => r.mode === "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0));
-  const paused = pausedDays(periods, c.start, c.asOf) + absPause;
+  const paused = pausedDays(periods, c.start, c.asOf) + absPause + pauseNoDates;
   const ent = serviceEntitlement({ start: c.start, asOf: c.asOf, category: c.category, rules: R(), paused });
   if (!ent) return null;
   const hpd = R().hoursPerDay;
@@ -740,7 +746,7 @@ function calcData() {
   const taken = round2(takenDays + takenHours / hpd + absDeduct + sys.paid);
   const sickTaken = round2(rows.filter((r) => r.type === "sick").reduce((a, r) => a + (Number(r.days) || 0), 0) + sys.sick);
   const byType = {};
-  rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").forEach((r) => { byType[r.type] = (byType[r.type] || 0) + periodDays(r.from, r.to); });
+  pauseRows.forEach((r) => { byType[r.type] = (byType[r.type] || 0) + rowDays(r); });
   if (absPause) byType.absence = absPause;
   const raw = round2(ent.ordinary - taken);
   const final = ent.cap > 0 && raw > ent.cap ? ent.cap : raw;
@@ -800,9 +806,9 @@ function allLeaves(e) {
   const hpd = R().hoursPerDay;
   const prev = ((e.calc || {}).rows || []).map((r) => {
     const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
-    const d = t.input === "period" ? periodDays(r.from, r.to) : t.input === "hours" ? round2((Number(r.hours) || 0) / hpd) : Number(r.days) || 0;
+    const d = rowDays(r);
     return { src: "سابقة", type: r.type, name: typeName(r.type), from: r.from, to: r.to, days: d, hours: t.input === "hours" ? Number(r.hours) || 0 : 0,
-      effect: t.input === "absence" ? (r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق") : t.effect === "pause" ? "توقف الاستحقاق" : t.effect === "sick" ? "من المرضي" : "من الاعتيادي", note: r.note || "" };
+      effect: r.type === "absence" ? (r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق") : t.effect === "pause" ? "توقف الاستحقاق" : t.effect === "sick" ? "من المرضي" : "من الاعتيادي", note: r.note || "" };
   });
   const sys = visibleRequests().filter((r) => r.employeeId === e.id && r.kind !== "withdrawal" && r.status === "approved")
     .map((r) => ({ src: "النظام", type: r.type, name: r.typeName, from: r.startDate, to: r.endDate, days: r.total || 0, hours: r.unit === "hour" ? r.hours || 0 : 0,
@@ -1084,7 +1090,7 @@ document.addEventListener("click", async (ev) => {
         if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة" });
         ui.calc.saved = rows; ui.calc.dirty = true; render(); toast("انضاف الفرق للقائمة — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
       }
-      case "calc-type": { const r = ui.calc.rows[0]; r.type = v; if (CALC_TYPES[v].input !== "period") r.to = ""; redrawCalcLists(); $("#calcRows input[data-k=from]")?.focus(); break; }
+      case "calc-type": { const r = ui.calc.rows[0]; r.type = v; if (CALC_TYPES[v].input === "hours") r.to = ""; else if (r.from && r.to) r.days = autoDays(r) || r.days; redrawCalcLists(); $("#calcRows input[data-k=from]")?.focus(); break; }
       case "calc-commit": {
         const r = ui.calc.rows[0], was = ui.calc.editIdx != null;
         const prob = draftProblem(r); if (prob) { toast(prob, "bad"); $("#calcRows input:not([value]):not([data-k=note]), #calcRows input[value='']:not([data-k=note])")?.focus(); break; }
@@ -1097,7 +1103,7 @@ document.addEventListener("click", async (ev) => {
       case "calc-edit-saved": {
         const c = ui.calc;
         const i = Number(id);
-        c.editIdx = i; c.rows = [{ ...c.saved[i] }];
+        c.editIdx = i; c.rows = [{ ...c.saved[i] }]; if (!c.rows[0].days && c.rows[0].from && c.rows[0].to) c.rows[0].days = autoDays(c.rows[0]);
         redrawCalcLists(); $("#calcRows")?.scrollIntoView({ behavior: "smooth", block: "center" }); break;
       }
       case "calc-del-saved": {
@@ -1186,7 +1192,7 @@ document.addEventListener("input", (ev) => {
       if (t.dataset.k === "type" || t.dataset.k === "from" || t.dataset.k === "to" || t.dataset.k === "hours") {
         if (t.dataset.k === "type") { $("#calcRows").innerHTML = calcRows(); icons(); }
         else { const span = row.querySelector(".calc-days"); const tp = CALC_TYPES[r.type];
-          if (span && tp.input === "period") span.textContent = periodDays(r.from, r.to) ? `${periodDays(r.from, r.to)} يوم` : "—";
+          if ((t.dataset.k === "from" || t.dataset.k === "to") && tp.input !== "hours") { const a = autoDays(r); if (a) { r.days = a; const di = row.querySelector("[data-k=days]"); if (di) di.value = a; } }
           if (span && tp.input === "hours") span.textContent = r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—";
           if (t.dataset.k === "from") setDateMin(row.querySelector("[data-k=to]"), r.from); }
       }
