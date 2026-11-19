@@ -63,6 +63,18 @@ export function academicYear(dateStr, startMonth = 9) {
   return `${y}/${y + 1}`;
 }
 
+// تاريخ نهاية تقديري: من تاريخ البداية + عدد الأيام (calendar=true يحسب كل الأيام، وإلا يتجاوز العطل حسب الإعدادات)
+export function endDateFor(start, days, rules, calendar = false) {
+  const n = Math.ceil(Number(days) || 0);
+  if (!start || n < 1) return "";
+  const d = new Date(start + "T00:00:00");
+  const skip = (x) => !calendar && rules.excludeWeekends && rules.weekendDays.includes(x.getDay());
+  while (skip(d)) d.setDate(d.getDate() + 1);
+  let left = n - 1;
+  while (left > 0) { d.setDate(d.getDate() + 1); if (!skip(d)) left--; }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function countDays(start, end, rules) {
   if (!start || !end) return 0;
   const s = new Date(start + "T00:00:00"), e = new Date(end + "T00:00:00");

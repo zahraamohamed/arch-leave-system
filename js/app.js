@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191141";
-import { COLLEGE } from "./config.js?v=202611191141";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191141";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191141";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191141";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191141";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191203";
+import { COLLEGE } from "./config.js?v=202611191203";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191203";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191203";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191203";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191203";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -56,6 +56,7 @@ const rowDays = (r) => {
 };
 // الأيام التلقائية من "من" و"إلى": التوقف بالأيام التقويمية، والمخصومة حسب إعدادات العطل
 const autoDays = (r) => (!r.from || !r.to || r.to < r.from) ? "" : String((CALC_TYPES[r.type]?.effect === "pause" ? periodDays(r.from, r.to) : countDays(r.from, r.to, R())) || "");
+const autoEnd = (r) => endDateFor(r.from, r.days, R(), CALC_TYPES[r.type]?.effect === "pause");
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
@@ -376,10 +377,13 @@ function wireNewRequest() {
     const n = ev.target.name; if (!n) return;
     ui.newReq[n] = ev.target.value;
     if (n === "type") return refreshReq(true);
+    if (n === "days" && form.endDate && ui.newReq.startDate) { const e = endDateFor(ui.newReq.startDate, ui.newReq.days, R(), typeOf(ui.newReq.type)?.deducts === "none"); if (e) { ui.newReq.endDate = e; setDateValue(form.endDate, e); } }
     if (n === "startDate" || n === "endDate") {
-      if (n === "startDate" && form.endDate && (!ui.newReq.endDate || ui.newReq.endDate < ui.newReq.startDate)) { ui.newReq.endDate = ui.newReq.startDate; setDateValue(form.endDate, ui.newReq.startDate); }
+      const keepDays = n === "startDate" && form.endDate && Number(ui.newReq.days) > 0;
+      if (keepDays) { const e = endDateFor(ui.newReq.startDate, ui.newReq.days, R(), typeOf(ui.newReq.type)?.deducts === "none"); if (e) { ui.newReq.endDate = e; setDateValue(form.endDate, e); } }
+      else if (n === "startDate" && form.endDate && (!ui.newReq.endDate || ui.newReq.endDate < ui.newReq.startDate)) { ui.newReq.endDate = ui.newReq.startDate; setDateValue(form.endDate, ui.newReq.startDate); }
       if (form.endDate) setDateMin(form.endDate, ui.newReq.startDate);
-      if (form.days) { ui.newReq.days = countDays(ui.newReq.startDate, ui.newReq.endDate, R()) || ""; form.days.value = ui.newReq.days; }
+      if (form.days && !keepDays) { ui.newReq.days = countDays(ui.newReq.startDate, ui.newReq.endDate, R()) || ""; form.days.value = ui.newReq.days; }
     }
     refreshSummary();
   };
@@ -1191,10 +1195,16 @@ document.addEventListener("input", (ev) => {
     if (row) {
       const r = ui.calc.rows[Number(row.dataset.i)];
       r[t.dataset.k] = t.value;
-      if (t.dataset.k === "type" || t.dataset.k === "from" || t.dataset.k === "to" || t.dataset.k === "hours") {
+      if (["type", "from", "to", "hours", "days"].includes(t.dataset.k)) {
         if (t.dataset.k === "type") { $("#calcRows").innerHTML = calcRows(); icons(); }
         else { const span = row.querySelector(".calc-days"); const tp = CALC_TYPES[r.type];
-          if ((t.dataset.k === "from" || t.dataset.k === "to") && tp.input !== "hours") { const a = autoDays(r); if (a) { r.days = a; const di = row.querySelector("[data-k=days]"); if (di) di.value = a; } }
+          if (tp.input !== "hours") {
+            const k = t.dataset.k, di = row.querySelector("[data-k=days]"), ti = row.querySelector("[data-k=to]");
+            const setTo = () => { const e = autoEnd(r); if (e) { r.to = e; setDateValue(ti, e); } };
+            if (k === "days") setTo();                                   // الأيام ← تاريخ نهاية تقديري
+            else if (k === "from") { if (Number(r.days) > 0) setTo(); else { const a = autoDays(r); if (a) { r.days = a; di.value = a; } } }
+            else if (k === "to") { const a = autoDays(r); if (a) { r.days = a; di.value = a; } }
+          }
           if (span && tp.input === "hours") span.textContent = r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—";
           if (t.dataset.k === "from") setDateMin(row.querySelector("[data-k=to]"), r.from); }
       }
