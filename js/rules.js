@@ -101,6 +101,15 @@ export function paidInAcademicYear(requests, employeeId, year, startMonth, exclu
     .reduce((a, r) => a + (r.paid || 0), 0));
 }
 
+// المرضية المأخوذة خلال الخمس سنوات اللي قبل التاريخ (براتب تام / بنصف راتب) — م46/1/ب
+export function sickUsed5y(requests, employeeId, date, excludeId) {
+  const d = date ? new Date(date + "T00:00:00") : new Date();
+  const from = new Date(d); from.setFullYear(from.getFullYear() - 5);
+  const lo = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}-${String(from.getDate()).padStart(2, "0")}`;
+  const list = requests.filter((r) => r.employeeId === employeeId && r.kind !== "withdrawal" && r.status === "approved" && r.deducts === "sick" && !r.deleted && (!excludeId || r.id !== excludeId) && (r.endDate || r.startDate) >= lo && r.startDate <= (date || "9999"));
+  return { paid: round2(list.reduce((a, r) => a + (r.paid || 0), 0)), half: round2(list.reduce((a, r) => a + (r.half || 0), 0)) };
+}
+
 // خطة الصرف: كم براتب، كم نصف راتب، كم بدون راتب، مع السبب
 export function payPlan({ type, total, employee, rules, requests, startDate, excludeId, split = true }) {
   const out = { paid: 0, half: 0, unpaid: 0, notes: [] };
@@ -110,11 +119,21 @@ export function payPlan({ type, total, employee, rules, requests, startDate, exc
     return { ...out, pay: type.fixedPay === "unpaid" ? "unpaid" : "paid", fromBalance: false };
   }
   if (type.deducts === "sick") {
+    // م46/1: بكل مرضة 120 يوم براتب تام وبعدها 90 بنصف راتب، وبآخر 5 سنوات مجموعها لا يتجاوز 180 تام و180 نصف
     const sick = Math.max(0, round2(employee.sick || 0));
-    out.paid = Math.min(total, sick);
-    out.half = round2(total - out.paid);
-    if (out.half > 0) out.notes.push(`الرصيد المرضي ${sick} يوم — الباقي بنصف راتب (م46)`);
-    return { ...out, pay: out.half ? (out.paid ? "mixed" : "half") : "paid", fromBalance: true };
+    const used = sickUsed5y(requests || [], employee.id, startDate, excludeId);
+    const full5 = Math.max(0, round2(180 - used.paid)), half5 = Math.max(0, round2(180 - used.half));
+    const fullCap = Math.min(sick, 120, full5);
+    out.paid = round2(Math.min(total, fullCap));
+    out.half = round2(Math.min(total - out.paid, 90, half5));
+    out.unpaid = round2(total - out.paid - out.half);
+    if (out.paid < total) {
+      const why = out.paid === sick ? `الرصيد المرضي ${sick} يوم` : out.paid === full5 ? `استنفد 180 يوم براتب تام خلال آخر 5 سنوات (أخذ ${used.paid})` : "الحد 120 يوم براتب تام بالمرضة الوحدة";
+      out.notes.push(`${why} — الباقي بنصف راتب (م46/1)`);
+    }
+    if (out.unpaid > 0) out.notes.push(`تجاوز حد نصف الراتب (90 يوم بالمرضة، و180 بآخر 5 سنوات — أخذ ${used.half}) — الباقي ${out.unpaid} يوم بدون راتب، لحد 180 يوم وبعدها يحال على التقاعد (م46/3). الأمراض المزمنة (سل، سرطان…) براتب تام لحد سنتين بتأييد طبي (م46/4).`);
+    const pay = out.unpaid ? (out.paid || out.half ? "partial" : "unpaid") : out.half ? (out.paid ? "mixed" : "half") : "paid";
+    return { ...out, pay, fromBalance: true };
   }
   // الرصيد الاعتيادي
   const c = rules.categories[employee.category] || {};
