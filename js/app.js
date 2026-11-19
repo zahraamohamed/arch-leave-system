@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191138";
-import { COLLEGE } from "./config.js?v=202611191138";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191138";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191138";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191138";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191138";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191140";
+import { COLLEGE } from "./config.js?v=202611191140";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191140";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191140";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191140";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191140";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -1205,7 +1205,9 @@ document.addEventListener("change", async (ev) => {
   const t = ev.target;
   if (t.name === "empId" && t.closest("#calcForm")) {
     const e = empById(t.value);
+    if (ui.calc.dirty && !confirm("عندك تغييرات بالإجازات ما انحفظت. تنتقل لمنتسب ثاني وتتركها؟")) { t.value = ui.calc.empId; return; }
     if (e) loadCalcFor(e); else { ui.calc.empId = ""; ui.calc.saved = []; ui.calc.dirty = false; ui.calc.editIdx = null; }
+    history.replaceState(null, "", e ? `#/calc?emp=${e.id}` : "#/calc");
     render();
   }
   if (t.dataset.f) { ui.reqFilter[t.dataset.f] = t.value; $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
@@ -1294,7 +1296,14 @@ subscribe(() => {
   if (document.querySelector(".modal-bg")) return;
   if (location.hash.startsWith("#/new") && $("#reqForm")) { clearTimeout(timer); timer = setTimeout(refreshSummary, 30); return; }
   const a = document.activeElement;
-  if (location.hash.startsWith("#/calc") && $("#calcForm")) { clearTimeout(timer); timer = setTimeout(refreshCalc, 30); return; }
+  if (location.hash.startsWith("#/calc") && $("#calcForm")) {
+    // البيانات وصلت بعد فتح الصفحة: إذا قائمة المنتسبين ناقصة أو المنتسب المطلوب ما انحمل، نعيد الرسم (بدون ما نضيع إدخال جاري)
+    const emps = S().employees.filter((e) => e.active !== false).length;
+    const pe = new URLSearchParams(location.hash.split("?")[1] || "").get("emp");
+    const stale = $("#calcForm [name=empId]").options.length !== emps + 1 || (pe && ui.calc.empId !== pe && empById(pe));
+    const busy = a && a.closest && a.closest("#calcForm") && a.tagName !== "SELECT" && a.tagName !== "BUTTON";
+    clearTimeout(timer); timer = setTimeout(stale && !busy ? render : refreshCalc, 30); return;
+  }
   if (a && ["empSearch", "reqSearch", "formsSearch"].includes(a.id)) { if ($("#empTable")) $("#empTable").innerHTML = employeeTable(); return; }
   clearTimeout(timer); timer = setTimeout(render, 30);
 });
