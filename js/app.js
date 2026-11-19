@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191140";
-import { COLLEGE } from "./config.js?v=202611191140";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191140";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191140";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191140";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191140";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191141";
+import { COLLEGE } from "./config.js?v=202611191141";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191141";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191141";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191141";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191141";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -39,7 +39,9 @@ const CALC_TYPES = {
   ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي." },
   hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي — كل 7 ساعات = يوم." },
   sick:      { name: "مرضية",                    input: "days",   effect: "sick",    hint: "تنخصم من الرصيد المرضي." },
-  delivery:  { name: "حمل ووضع",                 input: "days", effect: "pause",   hint: PAUSE_HINT },
+  prenatal:  { name: "قبل الوضع",                input: "days", effect: "pause",   hint: PAUSE_HINT },
+  postnatal: { name: "بعد الوضع",                input: "days", effect: "pause",   hint: PAUSE_HINT },
+  delivery:  { name: "حمل ووضع",                 input: "days", effect: "pause",   hint: PAUSE_HINT, hidden: true }, // للبيانات القديمة فقط
   maternity: { name: "أمومة (رعاية طفل)",        input: "days", effect: "pause",   hint: PAUSE_HINT },
   unpaid:    { name: "بدون راتب",                input: "days", effect: "pause",   hint: PAUSE_HINT },
   long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "days", effect: "pause", hint: PAUSE_HINT },
@@ -620,7 +622,7 @@ function calcRows() {
   return `<div class="calc-draft eff-${t.effect}${editing ? " editing" : ""}" data-i="0">
     ${editing ? `<div class="calc-editing"><i data-lucide="pencil"></i>تعدّل الإجازة رقم ${c.editIdx + 1}</div>` : ""}
     <div class="lbl">نوع الإجازة</div>
-    <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
+    <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).filter(([k, x]) => !x.hidden || k === r.type).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
     <p class="calc-hint"><i data-lucide="info"></i>${t.hint}${t.input === "hours" ? "" : " اختر من وإلى والأيام تنحسب وحدها، أو اكتب عدد الأيام مباشرة. التاريخ تكدر تختاره من التقويم أو تكتبه (مثل 2/2/2024)."}</p>
     <div class="calc-fields">${fields}</div>
     <label><span>ملاحظة <small class="muted">(اختياري)</small></span><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>

@@ -28,7 +28,8 @@ export const DEFAULT_RULES = {
     { key: "sick",       name: "مرضية",               deducts: "sick",    unit: "day",  for: ["staff", "teaching"] },
     // pausesAccrual: مدة الإجازة ما ينحسبلها استحقاق (لا تُمنح إجازة اعتيادية عن إجازة أخرى، والبدون راتب لا تُعد خدمة)
     { key: "unpaid",     name: "بدون راتب",           deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "unpaid", pausesAccrual: true },
-    { key: "delivery",   name: "حمل ووضع (قبل وبعد الولادة)", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
+    { key: "prenatal",   name: "قبل الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
+    { key: "postnatal",  name: "بعد الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
     { key: "maternity",  name: "أمومة (رعاية طفل)",   deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
     { key: "summer",     name: "العطلة الصيفية",      deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
     { key: "sabbatical", name: "تفرغ علمي",           deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
