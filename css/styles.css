@@ -448,3 +448,18 @@ span.flatpickr-weekday { font-size: 12.5px; font-weight: 600; color: var(--ink-3
 .calc-details tr.cd-sick td:first-child b { color: #1d4ed8; }
 .cd-sum { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); font-size: 14px; color: var(--ink-2); }
 .cd-sum b { color: var(--navy); }
+
+.leave-sum { margin-bottom: 20px; }
+.sum-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.sum-chip { border: 1px solid var(--line-2); border-inline-start: 3px solid var(--navy); background: #fafbfc; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.sum-chip b { font-size: 14px; }
+.sum-chip span { font-size: 13px; color: var(--ink-2); }
+.sum-chip.t-sick { border-inline-start-color: #1d4ed8; }
+.sum-chip.t-maternity, .sum-chip.t-delivery, .sum-chip.t-unpaid, .sum-chip.t-long { border-inline-start-color: #7a5af5; }
+.sum-chip.t-absence { border-inline-start-color: var(--warn); }
+.leaves-cell { display: flex; flex-direction: column; font-size: 13px; }
+.sheet .sh-sub { font-size: 15px; margin: 22px 0 8px; color: var(--navy); }
+.sheet table.compact th, .sheet table.compact td { padding: 7px 9px; font-size: 13px; }
+.sheet table.compact thead th { background: #eef1f5; width: auto; }
+.sheet .sh-note { color: var(--ink-2); margin-top: 10px; }
+@media (max-width: 600px) { .sheet table.compact tr { display: table-row; } .sheet table.compact th, .sheet table.compact td { display: table-cell; } .sheet table.compact { display: block; overflow-x: auto; } }

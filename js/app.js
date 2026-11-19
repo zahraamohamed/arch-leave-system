@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611190841";
-import { COLLEGE } from "./config.js?v=202611190841";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190841";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190841";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190841";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190841";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611190846";
+import { COLLEGE } from "./config.js?v=202611190846";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190846";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190846";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190846";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190846";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -152,6 +152,13 @@ function dashboard() {
 
 const segFilter = () => `<div class="seg" data-seg="empFilter">${[["all", "الكل"], ["teaching", "التدريسيون"], ["staff", "الموظفون"]].map(([k, l]) => `<button class="${ui.empFilter === k ? "on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>`;
 
+function empLeavesCell(e) {
+  const sum = leaveSummary(e);
+  if (!sum.length) return `<span class="muted">—</span>`;
+  const total = sum.reduce((a, g) => a + g.count, 0);
+  return `<span class="leaves-cell" title="${esc(sum.map((g) => `${g.name}: ${summaryText(g)}`).join("\n"))}"><b>${total}</b> إجازة<span class="sub">${esc(sum.slice(0, 3).map((g) => `${g.name} ${g.count}`).join(" · "))}${sum.length > 3 ? " …" : ""}</span></span>`;
+}
+
 function filteredEmployees() {
   const q = ui.empSearch.trim();
   return S().employees.filter((e) => e.active !== false)
@@ -164,7 +171,7 @@ function employeeTable() {
   const list = filteredEmployees();
   if (!list.length) return `<p class="empty">${S().employees.length ? "لا توجد نتائج مطابقة." : "لم تتم إضافة منتسبين بعد."}</p>`;
   return `<div class="table-wrap"><table class="table">
-    <thead><tr><th>الاسم</th><th>الصنف</th><th class="hide-m">القسم / الشعبة</th><th class="n">الاعتيادي</th><th class="n hide-m">المرضي</th>${isAdmin() ? "<th></th>" : ""}</tr></thead>
+    <thead><tr><th>الاسم</th><th>الصنف</th><th class="hide-m">القسم / الشعبة</th><th class="n">الاعتيادي</th><th class="n hide-m">المرضي</th><th class="hide-m">الإجازات</th>${isAdmin() ? "<th></th>" : ""}</tr></thead>
     <tbody>${list.map((e) => `
       <tr data-go="#/employee/${e.id}">
         <td><b>${esc(e.name)}</b>${e.title ? `<div class="sub">${esc(e.title)}</div>` : ""}</td>
@@ -172,6 +179,7 @@ function employeeTable() {
         <td class="hide-m">${esc(e.department) || "—"}</td>
         <td class="n"><span class="bal ${e.balance <= 0 ? "neg" : e.balance < 3 ? "low" : ""}">${num(e.balance)}</span> <small>يوم</small>${e.category === "teaching" ? `<div class="sub">براتب هالسنة ${num(yearPaid(e))}/${R().categories.teaching.maxPaidPerYear}</div>` : ""}</td>
         <td class="n hide-m">${num(e.sick || 0)}</td>
+        <td class="hide-m">${empLeavesCell(e)}</td>
         ${isAdmin() ? `<td class="act"><a class="btn sm" href="#/new?emp=${e.id}">طلب</a></td>` : ""}
       </tr>`).join("")}</tbody></table></div>`;
 }
@@ -205,6 +213,7 @@ function employeeView(id) {
         ${isSuper() ? `<a class="btn" href="#/calc?emp=${e.id}"><i data-lucide="calculator"></i>تعديل الرصيد بالحاسبة</a>` : ""}
         <button class="btn ${isSuper() ? "ghost" : ""}" data-act="adjust" data-id="${e.id}"><i data-lucide="plus-minus"></i>${isSuper() ? "تعديل يدوي" : "تعديل الرصيد"}</button>
         <button class="btn" data-act="edit-emp" data-id="${e.id}"><i data-lucide="pencil"></i>تعديل</button>` : ""}
+        <a class="btn" href="#/statement/${e.id}"><i data-lucide="printer"></i>طباعة كشف الإجازات</a>
         <button class="btn" data-act="export-emp" data-id="${e.id}"><i data-lucide="file-spreadsheet"></i>Excel</button>
       </div></div>
     <section class="kpis">
@@ -214,6 +223,7 @@ function employeeView(id) {
             : `<div class="kpi"><span>آخر استحقاق</span><strong class="sm">${esc(e.accruedThrough || "—")}</strong><em>شهر</em></div>`}
       <div class="kpi"><span>عدد الطلبات</span><strong>${reqs.filter((r) => r.kind !== "withdrawal").length}</strong><em>طلب</em></div>
     </section>
+    ${summaryCard(e)}
     ${calcDetailsCard(e)}
     <section class="grid-2 even">
       <div class="card"><div class="card-h"><h3>الإجازات</h3></div>${requestsTable(reqs, true)}</div>
@@ -683,6 +693,82 @@ function calcSnapshot(d) {
 }
 function refreshCalc() { const r = $("#calcResult"); if (r) { r.innerHTML = calcResult(); icons(); } }
 
+
+/* ------------------------- leave summary & statement ------------------------- */
+const typeName = (key) => (CALC_TYPES[key] || {}).name || (R().types.find((t) => t.key === key) || {}).name || key;
+// كل إجازات المنتسب: السابقة (من الحاسبة) + الموافق عليها بالنظام
+function allLeaves(e) {
+  const hpd = R().hoursPerDay;
+  const prev = ((e.calc || {}).rows || []).map((r) => {
+    const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+    const d = t.input === "period" ? periodDays(r.from, r.to) : t.input === "hours" ? round2((Number(r.hours) || 0) / hpd) : Number(r.days) || 0;
+    return { src: "سابقة", type: r.type, name: typeName(r.type), from: r.from, to: r.to, days: d, hours: t.input === "hours" ? Number(r.hours) || 0 : 0,
+      effect: t.input === "absence" ? (r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق") : t.effect === "pause" ? "توقف الاستحقاق" : t.effect === "sick" ? "من المرضي" : "من الاعتيادي", note: r.note || "" };
+  });
+  const sys = visibleRequests().filter((r) => r.employeeId === e.id && r.kind !== "withdrawal" && r.status === "approved")
+    .map((r) => ({ src: "النظام", type: r.type, name: r.typeName, from: r.startDate, to: r.endDate, days: r.total || 0, hours: r.unit === "hour" ? r.hours || 0 : 0,
+      effect: r.deducts === "balance" ? (payText(r) || "من الاعتيادي") : r.deducts === "sick" ? "من المرضي" : (typeOf(r.type)?.pausesAccrual ? "توقف الاستحقاق" : PAY[r.pay] || "—"), note: r.serial }));
+  return [...prev, ...sys].sort((a, b) => (a.from || "").localeCompare(b.from || ""));
+}
+function leaveSummary(e) {
+  const map = new Map();
+  for (const l of allLeaves(e)) {
+    const k = l.type;
+    const g = map.get(k) || { key: k, name: typeName(k), count: 0, days: 0, hours: 0 };
+    g.count++; g.days = round2(g.days + (l.days || 0)); g.hours = round2(g.hours + (l.hours || 0));
+    map.set(k, g);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+const summaryText = (g) => `${g.count} ${g.count === 1 ? "مرة" : "مرات"} · ${g.hours ? `${num(g.hours)} ساعة (${num(g.days)} يوم)` : `${num(g.days)} يوم`}`;
+
+function summaryCard(e) {
+  const sum = leaveSummary(e);
+  if (!sum.length) return "";
+  const total = sum.reduce((a, g) => a + g.count, 0);
+  return `<div class="card leave-sum"><div class="card-h"><h3>ملخص الإجازات حسب النوع</h3><span class="muted small">${total} إجازة — السابقة والمسجلة بالنظام</span></div>
+    <div class="sum-chips">${sum.map((g) => `<div class="sum-chip t-${g.key}"><b>${esc(g.name)}</b><span>${summaryText(g)}</span></div>`).join("")}</div></div>`;
+}
+
+function statementView(id) {
+  const e = empById(id) || S().employees.find((x) => x.id === id);
+  if (!e) return shell(`<p class="empty">المنتسب غير موجود.</p>`, "employees");
+  const list = allLeaves(e), sum = leaveSummary(e), cd = e.calc || {};
+  const isT = e.category === "teaching";
+  return shell(`
+    <div class="page-head noprint"><div><a class="back" href="#/employee/${e.id}">→ ${esc(e.name)}</a><h2>كشف الإجازات</h2></div>
+      <div class="actions"><button class="btn primary" data-act="print"><i data-lucide="printer"></i>طباعة</button></div></div>
+    <article class="sheet statement">
+      <header class="sh-head">
+        ${logoHTML(86, true)}
+        <div class="sh-title"><div>${esc(uni())}</div><div class="sh-c">${esc(COLLEGE.name)}</div><div>${COLLEGE.system}</div></div>
+        <div class="sh-meta"><div>التاريخ: <b>${fmtDate(today())}</b></div></div>
+      </header>
+      <h1>كشف إجازات منتسب</h1>
+      <table>
+        <tr><th>الاسم</th><td>${esc(e.name)}</td><th>الصنف</th><td>${CATEGORIES[e.category]}</td></tr>
+        <tr><th>العنوان الوظيفي</th><td>${esc(e.title) || "—"}</td><th>القسم / الشعبة</th><td>${esc(e.department) || "—"}</td></tr>
+        <tr><th>الرقم الوظيفي</th><td>${esc(e.empNo) || "—"}</td><th>تاريخ المباشرة</th><td>${e.startDate ? fmtDate(e.startDate) : "—"}</td></tr>
+        <tr><th>الرصيد الاعتيادي</th><td><b>${days(e.balance)}</b></td><th>الرصيد المرضي</th><td><b>${days(e.sick || 0)}</b></td></tr>
+        ${isT ? `<tr><th>براتب بالسنة الدراسية</th><td colspan="3">${num(yearPaid(e))} من ${R().categories.teaching.maxPaidPerYear} يوم (${academicYear(today(), R().academicYearStartMonth)})</td></tr>` : ""}
+      </table>
+      ${sum.length ? `<h2 class="sh-sub">ملخص حسب النوع</h2>
+      <table class="compact"><thead><tr><th>النوع</th><th>عدد المرات</th><th>المدة</th></tr></thead>
+        <tbody>${sum.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.count}</td><td>${g.hours ? `${num(g.hours)} ساعة (${num(g.days)} يوم)` : `${num(g.days)} يوم`}</td></tr>`).join("")}</tbody></table>` : ""}
+      <h2 class="sh-sub">تفاصيل الإجازات</h2>
+      ${list.length ? `<table class="compact"><thead><tr><th>ت</th><th>النوع</th><th>من</th><th>إلى</th><th>المدة</th><th>الأثر</th><th>المصدر</th></tr></thead>
+        <tbody>${list.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${l.from ? fmtDate(l.from) : "—"}</td><td>${l.to && l.to !== l.from ? fmtDate(l.to) : "—"}</td>
+          <td>${l.hours ? `${num(l.hours)} س` : `${num(l.days)} يوم`}</td><td>${esc(l.effect)}</td><td>${l.src}${l.note ? ` · ${esc(l.note)}` : ""}</td></tr>`).join("")}</tbody></table>`
+        : `<p class="muted">لا توجد إجازات مسجلة.</p>`}
+      ${cd.result ? `<p class="small sh-note">آخر احتساب بالحاسبة لغاية ${fmtDate(cd.asOf)}: المستحق ${days(cd.result.ordinary)} − المأخوذ ${days(cd.result.taken)}${cd.result.paused ? ` (أيام موقوفة ${cd.result.paused})` : ""}.</p>` : ""}
+      <div class="sh-sign">
+        <div><span>شعبة الموارد البشرية</span><b>&nbsp;</b><em>التوقيع</em></div>
+        <div><span>المعاون الإداري</span><b>&nbsp;</b><em>التوقيع</em></div>
+      </div>
+      <footer class="sh-foot">صدر من ${COLLEGE.system} — ${esc(COLLEGE.name)} · ${esc(uni())} · ${fmtDT(new Date().toISOString())}</footer>
+    </article>`, "employees");
+}
+
 /* ----------------------------- settings ----------------------------- */
 function settingsView() {
   const s = S().settings, r = s.rules, c = r.categories;
@@ -1012,13 +1098,13 @@ function render() {
   const params = new URLSearchParams(qs || "");
   const views = {
     dashboard, employees: employeesView, employee: () => employeeView(arg), inbox: inboxView, requests: requestsView,
-    forms: formsView, form: () => formView(arg),
+    forms: formsView, form: () => formView(arg), statement: () => statementView(arg),
     new: () => (isAdmin() ? newRequestView(params) : inboxView()), settings: () => (isSuper() ? settingsView() : dashboard()),
     calc: () => (isSuper() ? calcView(params) : dashboard())
   };
   const y = window.scrollY;
   app.innerHTML = (views[page] || dashboard)();
-  document.body.classList.toggle("form-page", page === "form");
+  document.body.classList.toggle("form-page", page === "form" || page === "statement");
   document.body.classList.toggle("calc-page", page === "calc");
   window.scrollTo(0, y);
   if (page === "new") wireNewRequest();
