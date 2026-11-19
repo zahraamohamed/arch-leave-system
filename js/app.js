@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191129";
-import { COLLEGE } from "./config.js?v=202611191129";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191129";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191129";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191129";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191129";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191135";
+import { COLLEGE } from "./config.js?v=202611191135";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191135";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191135";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191135";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191135";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -34,15 +34,16 @@ const ruleText = (cat) => {
 const yearPaid = (e) => paidInAcademicYear(S().requests, e.id, academicYear(today(), R().academicYearStartMonth), R().academicYearStartMonth);
 
 const newCalcRow = (type = "ordinary") => ({ type, from: "", to: "", days: "", hours: "", note: "", mode: "pause" });
+const PAUSE_HINT = "ما تنخصم من الرصيد، بس أيامها ما ينضاف عنها استحقاق. إذا قطعها، اكتب تاريخ رجوعه كتاريخ نهاية.";
 const CALC_TYPES = {
-  ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct" },
-  hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct" },
-  sick:      { name: "مرضية",                    input: "days",   effect: "sick" },
-  delivery:  { name: "حمل ووضع",                 input: "period", effect: "pause" },
-  maternity: { name: "أمومة (رعاية طفل)",        input: "period", effect: "pause" },
-  unpaid:    { name: "بدون راتب",                input: "period", effect: "pause" },
-  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" },
-  absence:   { name: "غياب",                     input: "absence", effect: "absence" }
+  ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي." },
+  hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي — كل 7 ساعات = يوم." },
+  sick:      { name: "مرضية",                    input: "days",   effect: "sick",    hint: "تنخصم من الرصيد المرضي." },
+  delivery:  { name: "حمل ووضع",                 input: "period", effect: "pause",   hint: PAUSE_HINT },
+  maternity: { name: "أمومة (رعاية طفل)",        input: "period", effect: "pause",   hint: PAUSE_HINT },
+  unpaid:    { name: "بدون راتب",                input: "period", effect: "pause",   hint: PAUSE_HINT },
+  long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause", hint: PAUSE_HINT },
+  absence:   { name: "غياب",                     input: "absence", effect: "absence", hint: "اختر شلون ينحسب: يوقف الاستحقاق، أو ينخصم من الرصيد الاعتيادي." }
 };
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
@@ -558,7 +559,7 @@ function loadCalcFor(e) {
   ui.calc = {
     empId: e.id, category: e.category, start: startDateOf(e), asOf: today(),
     name: "", title: "", department: "", empNo: "",
-    saved: (saved.rows || []).map((r) => ({ ...newCalcRow(r.type), ...r })), dirty: false,
+    saved: (saved.rows || []).map((r) => ({ ...newCalcRow(r.type), ...r })), dirty: false, editIdx: null,
     rows: [newCalcRow()]
   };
 }
@@ -569,13 +570,13 @@ function calcView(params) {
   if (!c.asOf) c.asOf = today();
   const emps = S().employees.filter((e) => e.active !== false).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   return shell(`
-    ${pageHead("حاسبة الرصيد من تاريخ المباشرة", "تحسب المستحق من تاريخ المباشرة، توقف الاستحقاق بفترات الأمومة وبدون راتب والإجازات الطويلة، وتستقطع الإجازات المأخوذة.", `<button class="btn" data-act="print"><i data-lucide="printer"></i>طباعة</button>`)}
+    ${pageHead("حاسبة الرصيد", "اختر المنتسب وتاريخ مباشرته، أضف إجازاته السابقة، والرصيد يتحسب وحده على اليسار.", `<button class="btn" data-act="print"><i data-lucide="printer"></i>طباعة</button>`)}
     <div class="grid-2 req-grid">
       <form class="card form" id="calcForm" onsubmit="return false">
-        <div class="step"><span>1</span>المنتسب وتاريخ المباشرة</div>
-        <label>منتسب مسجل<select name="empId"><option value="">— منتسب جديد / حساب حر —</option>${emps.map((e) => `<option value="${e.id}" ${c.empId === e.id ? "selected" : ""}>${esc(e.name)} · ${CATEGORIES[e.category]}</option>`).join("")}</select></label>
+        <div class="step"><span>1</span>المنتسب</div>
+        <label>اختر المنتسب<select name="empId"><option value="">+ منتسب جديد (غير مسجل)</option>${emps.map((e) => `<option value="${e.id}" ${c.empId === e.id ? "selected" : ""}>${esc(e.name)} · ${CATEGORIES[e.category]}</option>`).join("")}</select></label>
         ${c.empId ? "" : `<div class="row">
-          <label>الاسم الكامل<input name="name" value="${esc(c.name)}" placeholder="للإضافة كمنتسب جديد"></label>
+          <label>الاسم الكامل<input name="name" value="${esc(c.name)}" placeholder="اسم المنتسب الجديد"></label>
           <label>اللقب / العنوان<input name="title" value="${esc(c.title)}"></label></div>
         <div class="row">
           <label>القسم / الشعبة<input name="department" value="${esc(c.department)}"></label>
@@ -583,77 +584,99 @@ function calcView(params) {
         <div class="row">
           <label>الصنف<select name="category">${Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}" ${c.category === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
           <label>تاريخ المباشرة<input type="date" name="start" value="${esc(c.start)}" required></label>
-          <label>لغاية تاريخ<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
+          <label>احسب لغاية<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
         </div>
-        <div class="step"><span>2</span>إضافة إجازة <small class="muted">— اختر النوع واكتب التفاصيل، وبعدين اضغط "أضف للجدول"</small></div>
-        ${c.empId && systemLeavesFor(c.empId, c.start, c.asOf).count ? `<div class="note">إجازاته المسجلة بالنظام (${systemLeavesFor(c.empId, c.start, c.asOf).count}) تنحسب وحدها — اكتب هنا بس الإجازات اللي قبل النظام.</div>` : ""}
+        <div class="step"><span>2</span>أضف إجازة سابقة</div>
+        ${c.empId && systemLeavesFor(c.empId, c.start, c.asOf).count ? `<div class="note">إجازاته اللي انوافق عليها بالنظام (${systemLeavesFor(c.empId, c.start, c.asOf).count}) تنحسب وحدها، فأضف هنا بس الإجازات اللي قبل النظام.</div>` : ""}
         ${calcMissingNote()}
         <div id="calcRows">${calcRows()}</div>
-        <div class="actions calc-commit"><button type="button" class="btn primary sm" data-act="calc-commit"><i data-lucide="corner-left-down"></i>أضف للجدول</button></div>
-        <div class="actions"><small class="muted">سطر جديد:</small>${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
         <div id="calcSaved">${calcSavedTable()}</div>
         <div id="calcSys">${calcSystemTable()}</div>
-        <ul class="muted small calc-help">
-          <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
-          <li><b>مرضية:</b> تنخصم من الرصيد المرضي.</li>
-          <li><b>غياب:</b> أيامه توقف الاستحقاق، أو اختر "يُخصم من الرصيد" بالسطر إذا تنخصم من الإجازات.</li>
-          <li><b>حمل ووضع، أمومة، بدون راتب، طويلة:</b> ما تنخصم، بس أيامها توقف الاستحقاق. إذا قطعها، اكتب تاريخ رجوعه الفعلي كتاريخ نهاية.</li>
-        </ul>
       </form>
       <aside class="card summary calc-sheet" id="calcResult">${calcResult()}</aside>
     </div>`, "calc");
 }
 
 function calcRows() {
-  const head = `<div class="calc-head"><span>#</span><span>النوع</span><span>التاريخ / من</span><span>إلى / المدة</span><span>الأيام</span><span>ملاحظة</span><span></span></div>`;
-  return head + ui.calc.rows.map((r, i) => {
-    const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
-    const pd = periodDays(r.from, r.to);
-    const field = t.input === "absence"
-      ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="أيام الغياب" value="${esc(r.days)}"><select data-k="mode" class="calc-mode" title="شلون ينحسب الغياب"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>يُخصم من الرصيد</option></select>`
-      : t.input === "period"
-        ? `<input type="date" data-k="from" value="${esc(r.from)}" title="من"><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}" title="إلى (تاريخ الرجوع الفعلي إذا قطعها)"><span class="calc-days">${pd ? `${pd} يوم` : "—"}</span>`
-        : t.input === "hours"
-          ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="hours" min="0" step="0.5" placeholder="الساعات" value="${esc(r.hours)}"><span class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</span>`
-          : `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}"><span class="calc-days">${r.days ? `${num(r.days)} يوم` : "—"}</span>`;
-    return `<div class="calc-row eff-${t.effect}" data-i="${i}">
-      <span class="calc-num">${i + 1}</span>
-      <select data-k="type">${Object.entries(CALC_TYPES).map(([k, x]) => `<option value="${k}" ${k === r.type ? "selected" : ""}>${x.name}</option>`).join("")}</select>
-      ${field}
-      <input type="text" data-k="note" placeholder="ملاحظة" value="${esc(r.note)}">
-      <button type="button" class="icon-btn del" data-act="calc-del-row" data-id="${i}" title="حذف هذه الإجازة"><i data-lucide="trash-2"></i></button>
-    </div>`;
-  }).join("");
+  const c = ui.calc, r = c.rows[0] || (c.rows[0] = newCalcRow());
+  const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+  const editing = c.editIdx != null;
+  const pd = periodDays(r.from, r.to);
+  const dateF = `<label>التاريخ <small class="muted">(اختياري)</small><input type="date" data-k="from" value="${esc(r.from)}"></label>`;
+  const fields = t.input === "period"
+    ? `<label>من تاريخ<input type="date" data-k="from" value="${esc(r.from)}"></label>
+       <label>إلى تاريخ <small class="muted">(أو تاريخ رجوعه)</small><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}"></label>
+       <div class="calc-out"><span>المدة</span><b class="calc-days">${pd ? `${pd} يوم` : "—"}</b></div>`
+    : t.input === "hours"
+      ? `${dateF}<label>عدد الساعات<input type="number" data-k="hours" min="0" step="0.5" inputmode="decimal" value="${esc(r.hours)}"></label>
+         <div class="calc-out"><span>تساوي</span><b class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</b></div>`
+      : t.input === "absence"
+        ? `${dateF}<label>أيام الغياب<input type="number" data-k="days" min="0" step="0.5" inputmode="decimal" value="${esc(r.days)}"></label>
+           <label>شلون ينحسب<select data-k="mode"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>ينخصم من الرصيد</option></select></label>`
+        : `${dateF}<label>عدد الأيام<input type="number" data-k="days" min="0" step="0.5" inputmode="decimal" value="${esc(r.days)}"></label><div></div>`;
+  return `<div class="calc-draft eff-${t.effect}${editing ? " editing" : ""}" data-i="0">
+    ${editing ? `<div class="calc-editing"><i data-lucide="pencil"></i>تعدّل الإجازة رقم ${c.editIdx + 1}</div>` : ""}
+    <div class="lbl">نوع الإجازة</div>
+    <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
+    <p class="calc-hint"><i data-lucide="info"></i>${t.hint}</p>
+    <div class="calc-fields">${fields}</div>
+    <label>ملاحظة <small class="muted">(اختياري)</small><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>
+    <div class="actions">
+      <button type="button" class="btn primary" data-act="calc-commit"><i data-lucide="${editing ? "check" : "plus"}"></i>${editing ? "حفظ التعديل" : "إضافة إلى القائمة"}</button>
+      ${editing ? `<button type="button" class="btn" data-act="calc-cancel-edit">إلغاء</button>` : ""}
+    </div>
+  </div>`;
 }
 
 const filledRow = (r) => !!(r.days || r.hours || (r.from && r.to) || (r.type === "absence" && r.days));
-const allCalcRows = () => (ui.calc.saved || []).concat(ui.calc.rows.filter(filledRow));
+// أثناء التعديل: السطر الأصلي يبقى بالقائمة، والحساب يستخدم النسخة المعدّلة إذا مكتملة
+const allCalcRows = () => {
+  const c = ui.calc, d = c.rows[0], ok = d && filledRow(d) && !draftProblem(d);
+  const list = (c.saved || []).slice();
+  if (c.editIdx != null) { if (ok) list[c.editIdx] = d; return list; }
+  return ok ? list.concat([d]) : list;
+};
 // نقل الأسطر المعبّأة من خانات الإدخال إلى جدول الإجازات
+function draftProblem(r) {
+  const t = CALC_TYPES[r.type];
+  if (t.input === "period") { if (!r.from || !r.to) return "اكتب تاريخ البداية والنهاية"; if (r.to < r.from) return "تاريخ النهاية قبل البداية"; return ""; }
+  if (t.input === "hours") return Number(r.hours) > 0 ? "" : "اكتب عدد الساعات";
+  return Number(r.days) > 0 ? "" : "اكتب عدد الأيام";
+}
 function commitDrafts() {
-  const f = ui.calc.rows.filter(filledRow);
-  if (!f.length) return 0;
-  ui.calc.saved = (ui.calc.saved || []).concat(f.map((r) => ({ ...r })));
-  ui.calc.rows = [newCalcRow(ui.calc.rows[ui.calc.rows.length - 1]?.type || "ordinary")];
-  ui.calc.dirty = true;
-  return f.length;
+  const c = ui.calc, r = c.rows[0];
+  if (!r || !filledRow(r) || draftProblem(r)) {
+    if (c.editIdx != null) { c.editIdx = null; c.rows = [newCalcRow()]; }
+    return 0;
+  }
+  const row = { ...r };
+  if (c.editIdx != null) c.saved[c.editIdx] = row; else c.saved = (c.saved || []).concat([row]);
+  c.editIdx = null; c.rows = [newCalcRow(r.type)]; c.dirty = true;
+  return 1;
 }
 function calcRowText(r) {
   const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
   const when = t.input === "period" ? `${fmtDate(r.from)} ← ${fmtDate(r.to)}` : (r.from ? fmtDate(r.from) : "—");
   const amount = t.input === "period" ? `${periodDays(r.from, r.to)} يوم`
     : t.input === "hours" ? `${num(r.hours)} ساعة (${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم)` : `${num(r.days)} يوم`;
-  const effect = r.type === "sick" ? "من المرضي" : (r.type === "ordinary" || r.type === "hourly") ? "من الاعتيادي"
-    : r.type === "absence" ? (r.mode === "deduct" ? "يُخصم من الاعتيادي" : "يوقف الاستحقاق") : "يوقف الاستحقاق";
+  const effect = r.type === "sick" ? "تنخصم من المرضي" : (r.type === "ordinary" || r.type === "hourly") ? "تنخصم من الاعتيادي"
+    : r.type === "absence" && r.mode === "deduct" ? "ينخصم من الاعتيادي" : "بدون استحقاق";
   return { when, amount, effect };
 }
 // جدول إجازات المنتسب المحفوظة بالحاسبة (تعديل = ترجع لخانات الإدخال، حذف = تنشال)
 function calcSavedTable() {
   const list = ui.calc.saved || [];
-  if (!list.length) return "";
-  return `<div class="calc-sys"><div class="step"><span>3</span>إجازاته ${ui.calc.dirty ? `<small class="pill warn">تغييرات غير محفوظة — اضغط حفظ أو اعتماد</small>` : `<small class="muted">(${list.length})</small>`}</div>
-    <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>النوع</th><th>التاريخ / الفترة</th><th class="n">المدة</th><th>الأثر</th><th>ملاحظة</th><th></th></tr></thead>
-    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr><td class="mono">${i + 1}</td><td>${esc(typeName(r.type))}</td><td>${x.when}</td><td class="n">${x.amount}</td><td>${x.effect}</td><td>${esc(r.note || "")}</td>
-      <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody></table></div></div>`;
+  const head = `<div class="step"><span>3</span>الإجازات المضافة${list.length ? ` <small class="muted">(${list.length})</small>` : ""}${ui.calc.dirty ? `<small class="pill warn">غير محفوظة بعد</small>` : ""}</div>`;
+  if (!list.length) return `<div class="calc-sys">${head}<div class="calc-empty">ما مضاف إجازات بعد. أضفها من فوق وراح تطلع هنا.</div></div>`;
+  const hpd = R().hoursPerDay;
+  const ord = round2(list.filter((r) => r.type === "ordinary" || (r.type === "absence" && r.mode === "deduct")).reduce((a, r) => a + (Number(r.days) || 0), 0) + list.filter((r) => r.type === "hourly").reduce((a, r) => a + (Number(r.hours) || 0), 0) / hpd);
+  const sick = round2(list.filter((r) => r.type === "sick").reduce((a, r) => a + (Number(r.days) || 0), 0));
+  const pause = list.filter((r) => CALC_TYPES[r.type]?.effect === "pause").reduce((a, r) => a + periodDays(r.from, r.to), 0) + list.filter((r) => r.type === "absence" && r.mode !== "deduct").reduce((a, r) => a + (Number(r.days) || 0), 0);
+  return `<div class="calc-sys">${head}
+    <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
+    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td>${x.when}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
+      <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل" aria-label="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف" aria-label="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody>
+    <tfoot><tr><td colspan="7">المجموع: ${ord ? `اعتيادي <b>${num(ord)}</b> يوم` : ""}${sick ? ` · مرضي <b>${num(sick)}</b> يوم` : ""}${pause ? ` · بدون استحقاق <b>${num(pause)}</b> يوم` : ""}</td></tr></tfoot></table></div></div>`;
 }
 function redrawCalcLists() { $("#calcRows").innerHTML = calcRows(); const sv = $("#calcSaved"); if (sv) sv.innerHTML = calcSavedTable(); icons(); refreshCalc(); }
 
@@ -663,7 +686,7 @@ function calcSystemTable() {
   if (!c.empId) return "";
   const list = systemLeavesFor(c.empId, c.start, c.asOf).list;
   if (!list.length) return "";
-  return `<div class="calc-sys"><div class="step"><span>4</span>إجازاته المسجلة بالنظام <small class="muted">(تنحسب وحدها — تتغير عن طريق السحب)</small></div>
+  return `<div class="calc-sys"><div class="step"><span>4</span>إجازاته الموافق عليها بالنظام <small class="muted">(للاطلاع — تنحسب وحدها)</small></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>الرقم</th><th>النوع</th><th>الفترة</th><th class="n">المدة</th><th>الأثر</th><th></th></tr></thead>
     <tbody>${list.map((r) => `<tr><td class="mono">${esc(r.serial)}</td><td>${esc(r.typeName)}</td><td>${fmtDate(r.startDate)}${r.endDate && r.endDate !== r.startDate ? " ← " + fmtDate(r.endDate) : ""}</td>
       <td class="n">${r.unit === "hour" ? num(r.hours) + " س" : num(r.total)}</td>
@@ -698,8 +721,8 @@ function calcMissingNote() {
   const parts = [g.ord > 0 ? `اعتيادي ${num(g.ord)} يوم` : "", g.sick > 0 ? `مرضي ${num(g.sick)} يوم` : ""].filter(Boolean).join(" و ");
   return `<div class="note warn">ما محفوظ لـ${esc(g.e.name)} تفاصيل إجازات بالحاسبة، لأن انضاف قبل ميزة الحفظ، فالجدول فاضي.
     ${parts ? `<br>الفرق بين المستحق ورصيده الحالي: <b>${parts}</b> (إجازات مأخوذة سابقاً بدون تفاصيل).
-    <br>اكتب إجازاته بالتفصيل وأضفها للجدول، أو
-    <button type="button" class="btn sm" data-act="calc-fill-gap"><i data-lucide="list-plus"></i>أضف الفرق كسطر واحد</button>` : "<br>اكتب إجازاته وأضفها للجدول، وبعدين اضغط \"حفظ الإجازات فقط\"."}</div>`;
+    <br>اكتب إجازاته بالتفصيل وأضفها للقائمة، أو
+    <button type="button" class="btn sm" data-act="calc-fill-gap"><i data-lucide="list-plus"></i>أضف الفرق كإجازة واحدة</button>` : "<br>اكتب إجازاته وأضفها للقائمة، وبعدين اضغط \"حفظ الإجازات فقط\"."}</div>`;
 }
 function calcData() {
   const c = ui.calc, rows = allCalcRows();
@@ -733,30 +756,30 @@ function calcResult() {
     <div class="sum-who"><b>${e ? esc(e.name) : esc(c.name) || "حساب حر"}</b><span>${CATEGORIES[c.category]} · مباشرة ${fmtDate(c.start)} ← ${fmtDate(c.asOf)}</span></div>
     <dl class="sum-dl">
       <div><dt>مدة الخدمة</dt><dd>${d.years} سنة و ${d.remMonths} شهر <small class="muted">(${d.days} يوم)</small></dd></div>
-      ${d.paused ? `<div><dt>أيام موقوفة</dt><dd class="neg">− ${d.paused} يوم</dd></div>
+      ${d.paused ? `<div><dt>أيام بدون استحقاق</dt><dd class="neg">− ${d.paused} يوم</dd></div>
         ${Object.entries(d.byType).map(([k, v]) => `<div class="sub-row"><dt>${CALC_TYPES[k].name}</dt><dd>${v} يوم</dd></div>`).join("")}
         <div><dt>الخدمة المحتسبة</dt><dd>${d.effDays} يوم</dd></div>` : ""}
-      <div><dt>المستحق الاعتيادي</dt><dd>${days(d.ordinary)}</dd></div>
+      <div><dt>المستحق عن خدمته</dt><dd>${days(d.ordinary)}</dd></div>
       ${d.takenDays ? `<div><dt>اعتيادية مأخوذة</dt><dd class="neg">− ${days(d.takenDays)}</dd></div>` : ""}
       ${d.sys.count ? `<div><dt>إجازات النظام (${d.sys.count})</dt><dd class="neg">− ${days(d.sys.paid)}${d.sys.sick ? ` · مرضي − ${num(d.sys.sick)}` : ""}${d.sys.periods.length ? ` · ${d.sys.periods.length} فترة موقوفة` : ""}</dd></div>` : ""}
       ${d.absDeduct ? `<div><dt>غياب مخصوم</dt><dd class="neg">− ${days(d.absDeduct)}</dd></div>` : ""}
       ${d.takenHours ? `<div><dt>زمنية مأخوذة</dt><dd class="neg">− ${num(d.takenHours)} ساعة = ${days(round2(d.takenHours / R().hoursPerDay))}</dd></div>` : ""}
     </dl>
-    <div class="sum-bal"><span>الرصيد الاعتيادي المتبقي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم</em></div>
+    <div class="sum-bal"><span>رصيده الاعتيادي</span><strong class="${d.final < 0 ? "neg" : ""}">${num(d.final)}</strong><em>يوم</em></div>
     ${d.final < 0 ? `<div class="note warn">المأخوذ أكثر من المستحق بـ ${days(-d.final)} — تُعامل بدون راتب.</div>` : ""}
     <dl class="sum-dl">
       <div><dt>المستحق المرضي</dt><dd>${days(d.sick)}</dd></div>
       ${d.sickTaken ? `<div><dt>مرضية مأخوذة</dt><dd class="neg">− ${days(d.sickTaken)}</dd></div>` : ""}
-      <div><dt>الرصيد المرضي المتبقي</dt><dd><b>${days(Math.max(0, d.sickLeft))}</b></dd></div>
+      <div><dt>رصيده المرضي</dt><dd><b>${days(Math.max(0, d.sickLeft))}</b></dd></div>
     </dl>
     <p class="muted small">الاحتساب: ${rule}. المرضية 30 يوم عن كل سنة خدمة محتسبة كاملة (م46).</p>
     <div class="calc-apply noprint">
-      ${e ? `<p class="small">رصيد ${esc(e.name)} الحالي: اعتيادي <b>${days(e.balance)}</b> · مرضي <b>${days(e.sick || 0)}</b></p>
-        <button type="button" class="btn primary block" data-act="calc-apply"><i data-lucide="check"></i>اعتماد الرصيدين وحفظ الإجازات</button>
-        <button type="button" class="btn block" data-act="calc-save" style="margin-top:8px"><i data-lucide="save"></i>حفظ الإجازات فقط (بدون تغيير الرصيد)</button>`
+      ${e ? `<div class="calc-compare"><div><span>رصيده بالنظام الآن</span><b>${num(e.balance)}</b><small>مرضي ${num(e.sick || 0)}</small></div><i data-lucide="arrow-left"></i><div><span>بعد الحفظ</span><b>${num(Math.max(0, d.final))}</b><small>مرضي ${num(Math.max(0, d.sickLeft))}</small></div></div>
+        <button type="button" class="btn primary block" data-act="calc-apply"><i data-lucide="check"></i>حفظ وتحديث رصيده</button>
+        <button type="button" class="btn block" data-act="calc-save" style="margin-top:8px"><i data-lucide="save"></i>حفظ الإجازات بدون تغيير رصيده</button>`
       : `<button type="button" class="btn primary block" data-act="calc-add-emp"><i data-lucide="user-plus"></i>إضافة كمنتسب جديد بهذا الرصيد</button>
         <p class="muted small">ينضاف برصيد اعتيادي ${days(Math.max(0, d.final))} ومرضي ${days(Math.max(0, d.sickLeft))}، والاستحقاق الشهري يكمل وحده من الشهر الجاي.</p>`}
-      ${notToday ? `<div class="note warn">"لغاية تاريخ" مو اليوم — الرصيد المعتمد يكون لغاية ${fmtDate(c.asOf)}، والاستحقاق التلقائي يبدأ من الشهر الحالي.</div>` : ""}
+      ${notToday ? `<div class="note warn">"احسب لغاية" مو تاريخ اليوم — الرصيد المعتمد يكون لغاية ${fmtDate(c.asOf)}، والاستحقاق التلقائي يبدأ من الشهر الحالي.</div>` : ""}
     </div>`;
 }
 // ما ينحفظ على سجل المنتسب: تاريخ المباشرة، الإجازات المدخلة، وملخص النتيجة
@@ -1059,19 +1082,30 @@ document.addEventListener("click", async (ev) => {
         const rows = [];
         if (g.ord > 0) rows.push({ ...newCalcRow("ordinary"), days: String(g.ord), note: "إجازات سابقة غير مفصلة" });
         if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة" });
-        ui.calc.saved = rows; ui.calc.dirty = true; render(); toast("انضاف الفرق للجدول — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
+        ui.calc.saved = rows; ui.calc.dirty = true; render(); toast("انضاف الفرق للقائمة — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
       }
-      case "calc-commit": { const n = commitDrafts(); if (!n) { toast("اكتب تفاصيل الإجازة أولاً", "bad"); break; } redrawCalcLists(); toast(n > 1 ? `انضافت ${n} إجازات للجدول` : "انضافت الإجازة للجدول"); break; }
+      case "calc-type": { const r = ui.calc.rows[0]; r.type = v; if (CALC_TYPES[v].input !== "period") r.to = ""; redrawCalcLists(); $("#calcRows input[data-k=from]")?.focus(); break; }
+      case "calc-commit": {
+        const r = ui.calc.rows[0], was = ui.calc.editIdx != null;
+        const prob = draftProblem(r); if (prob) { toast(prob, "bad"); $("#calcRows input:not([value]):not([data-k=note]), #calcRows input[value='']:not([data-k=note])")?.focus(); break; }
+        commitDrafts(); redrawCalcLists(); toast(was ? "انحفظ التعديل بالقائمة" : "انضافت الإجازة للقائمة"); break;
+      }
+      case "calc-cancel-edit": {
+        const c = ui.calc; if (c.editIdx == null) break;
+        c.editIdx = null; c.rows = [newCalcRow(c.rows[0].type)]; redrawCalcLists(); break;
+      }
       case "calc-edit-saved": {
-        const [r] = ui.calc.saved.splice(Number(id), 1);
-        const blank = ui.calc.rows.filter(filledRow);
-        ui.calc.rows = blank.concat([{ ...r }]); ui.calc.dirty = true;
-        redrawCalcLists(); $("#calcRows .calc-row:last-child [data-k=type]")?.focus(); toast("رجعت الإجازة لخانات الإدخال — عدّلها واضغط أضف للجدول"); break;
+        const c = ui.calc;
+        const i = Number(id);
+        c.editIdx = i; c.rows = [{ ...c.saved[i] }];
+        redrawCalcLists(); $("#calcRows")?.scrollIntoView({ behavior: "smooth", block: "center" }); break;
       }
       case "calc-del-saved": {
-        const r = ui.calc.saved[Number(id)];
-        if (!confirm(`حذف الإجازة رقم ${Number(id) + 1} (${typeName(r.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ أو اعتماد.`)) break;
-        ui.calc.saved.splice(Number(id), 1); ui.calc.dirty = true; redrawCalcLists(); break;
+        const c = ui.calc, i = Number(id), r = c.saved[i];
+        if (!confirm(`حذف الإجازة رقم ${i + 1} (${typeName(r.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ.`)) break;
+        c.saved.splice(i, 1); c.dirty = true;
+        if (c.editIdx === i) { c.editIdx = null; c.rows = [newCalcRow(r.type)]; } else if (c.editIdx > i) c.editIdx--;
+        redrawCalcLists(); break;
       }
       case "calc-add-row": ui.calc.rows.push(newCalcRow(v || "ordinary")); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
       case "calc-del-row": { const rr = ui.calc.rows[Number(id)]; if ((rr.days || rr.hours || rr.from || rr.note) && !confirm(`مسح هذا السطر (${typeName(rr.type)})؟`)) break; }
@@ -1145,7 +1179,7 @@ document.addEventListener("input", (ev) => {
   if (t.id === "empSearch") { ui.empSearch = t.value; $("#empTable").innerHTML = employeeTable(); }
   if (t.id === "reqSearch") { ui.reqFilter.q = t.value.trim(); $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
   if (t.closest && t.closest("#calcForm")) {
-    const row = t.closest(".calc-row");
+    const row = t.closest(".calc-draft");
     if (row) {
       const r = ui.calc.rows[Number(row.dataset.i)];
       r[t.dataset.k] = t.value;
@@ -1165,7 +1199,7 @@ document.addEventListener("change", async (ev) => {
   const t = ev.target;
   if (t.name === "empId" && t.closest("#calcForm")) {
     const e = empById(t.value);
-    if (e) loadCalcFor(e); else { ui.calc.empId = ""; ui.calc.saved = []; ui.calc.dirty = false; }
+    if (e) loadCalcFor(e); else { ui.calc.empId = ""; ui.calc.saved = []; ui.calc.dirty = false; ui.calc.editIdx = null; }
     render();
   }
   if (t.dataset.f) { ui.reqFilter[t.dataset.f] = t.value; $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
