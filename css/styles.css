@@ -537,3 +537,5 @@ span.flatpickr-weekday { font-size: 12.5px; font-weight: 600; color: var(--ink-3
 .seg button { border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--ink-2); padding: 7px 12px; border-radius: 8px; cursor: pointer; }
 .seg button.on { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,.1); }
 .seg button:focus-visible { outline: 2px solid var(--navy); }
+.eff.eff-service { background: #e7f6ec; color: #1f7a3f; }
+.calc-draft.eff-service { border-inline-start-color: #1f7a3f; }

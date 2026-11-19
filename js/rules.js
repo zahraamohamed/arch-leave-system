@@ -6,7 +6,7 @@
 export const CATEGORIES = { staff: "موظف", teaching: "تدريسي" };
 
 export const DEFAULT_RULES = {
-  version: 2,
+  version: 3,
   hoursPerDay: 7,               // لتحويل الإجازة الزمنية لأيام (عرف إداري — لا يوجد نص صريح بالقانون)
   weekendDays: [5, 6],          // الجمعة والسبت
   excludeWeekends: true,
@@ -16,7 +16,7 @@ export const DEFAULT_RULES = {
     // م43: يوم عن كل 10 أيام خدمة = 3 أيام بالشهر، تتراكم بدون حد للإجازة
     // (حد الـ180 يوم بالقانون يخص احتساب الرصيد عند التقاعد فقط، فما ينطبق هنا)
     // ولا يمنح أكثر من 120 يوم براتب بالمرة الواحدة
-    staff:    { accrual: "monthly", amount: 3, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 730 },
+    staff:    { accrual: "monthly", amount: 3, max: 180, maxPaidPerLeave: 120, maxPaidPerYear: 0, maxUnpaidPerLeave: 60 }, // م43/3: تراكم لحد 180، و120 بالمرة؛ م43/4: 60 بدون راتب
     // م10 خدمة جامعية: 15 يوم عن كل سنة دراسية تتراكم، ولا يمنح أكثر من 30 يوم خلال السنة الدراسية الواحدة
     teaching: { accrual: "academic", amount: 15, maxPaidPerLeave: 0, maxPaidPerYear: 30, maxUnpaidPerLeave: 730 }
   },
@@ -129,7 +129,7 @@ export function payPlan({ type, total, employee, rules, requests, startDate, exc
   if (avail >= total) out.paid = total;
   else if (split && avail > 0) { out.paid = avail; out.unpaid = round2(total - avail); }
   else out.unpaid = total;
-  if (out.unpaid > 0 && c.maxUnpaidPerLeave > 0 && out.unpaid > c.maxUnpaidPerLeave) out.notes.push(`تنبيه: بدون راتب أكثر من ${c.maxUnpaidPerLeave} يوم (قرار 418 لسنة 1987: لحد سنتين)`);
+  if (out.unpaid > 0 && c.maxUnpaidPerLeave > 0 && out.unpaid > c.maxUnpaidPerLeave) out.notes.push(`تنبيه: بدون راتب ${out.unpaid} يوم — القانون يسمح لحد ${c.maxUnpaidPerLeave} يوم إذا ما عنده رصيد${employee.category === "staff" ? " (م43/4 خدمة مدنية)" : ""}`);
   const pay = out.unpaid ? (out.paid ? "partial" : "unpaid") : "paid";
   return { ...out, pay, fromBalance: true };
 }
@@ -194,11 +194,15 @@ export function accrualFor(emp, rules, target = monthKey(), pauses = []) {
       labels.push(`رصيد مرضي ${y}`);
     }
   }
-  const newB = round2(bal + addB), newS = round2(sick + addS);
+  // م43/3: الرصيد يتراكم لحد السقف؛ الزايد ما ينضاف (والرصيد الأعلى من السقف ما ينقص تلقائياً)
+  let newB = round2(bal + addB); const capped = c.max > 0 && newB > c.max;
+  if (capped) newB = Math.max(bal, c.max);
+  const newS = round2(sick + addS);
   const label = c.accrual === "monthly"
     ? `استحقاق لغاية ${target}${pausedTotal ? ` (موقوف ${pausedTotal} يوم: أمومة/وضع/بدون راتب)` : ""}`
     : (labels.join(" · ") || `تحديث ${target}`);
-  return { target, balance: newB, dBalance: round2(newB - bal), sick: newS, dSick: round2(newS - sick), label };
+  const capNote = capped ? ` — وصل الحد ${c.max} يوم (م43/3)` : "";
+  return { target, balance: newB, dBalance: round2(newB - bal), sick: newS, dSick: round2(newS - sick), label: label + capNote };
 }
 
 // إجازة توقف الاستحقاق انسجلت بأثر رجعي: كم انضاف عن أشهرها اللي سبق احتسابها (حتى يُسترجع)
@@ -260,7 +264,7 @@ export function serviceEntitlement({ start, asOf, category, rules, paused = 0 })
   return {
     days, months, years: Math.floor(months / 12), remMonths: months % 12,
     paused, effDays, effMonths: round2(effMonths),
-    ordinary, cap: 0,
+    ordinary, cap: c.max > 0 ? c.max : 0,
     sick: effYears * (rules.sickAnnual || 30)
   };
 }
