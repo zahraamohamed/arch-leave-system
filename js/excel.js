@@ -1,5 +1,5 @@
 // تصدير واستيراد Excel (SheetJS محمّل من index.html كـ window.XLSX)
-import { CATEGORIES, STATUS, PAY, round2, academicYear } from "./rules.js?v=202611191135";
+import { CATEGORIES, STATUS, PAY, round2, academicYear } from "./rules.js?v=202611191137";
 
 const X = () => window.XLSX;
 const d = (iso) => (iso ? new Date(iso.length <= 10 ? iso + "T00:00:00" : iso).toLocaleDateString("en-GB") : "");

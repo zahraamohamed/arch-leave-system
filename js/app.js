@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191135";
-import { COLLEGE } from "./config.js?v=202611191135";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191135";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191135";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191135";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191135";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191137";
+import { COLLEGE } from "./config.js?v=202611191137";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191137";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191137";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191137";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191137";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -602,10 +602,10 @@ function calcRows() {
   const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
   const editing = c.editIdx != null;
   const pd = periodDays(r.from, r.to);
-  const dateF = `<label>التاريخ <small class="muted">(اختياري)</small><input type="date" data-k="from" value="${esc(r.from)}"></label>`;
+  const dateF = `<label><span>التاريخ <small class="muted">(اختياري)</small></span><input type="date" data-k="from" value="${esc(r.from)}"></label>`;
   const fields = t.input === "period"
     ? `<label>من تاريخ<input type="date" data-k="from" value="${esc(r.from)}"></label>
-       <label>إلى تاريخ <small class="muted">(أو تاريخ رجوعه)</small><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}"></label>
+       <label><span>إلى تاريخ <small class="muted">(أو تاريخ رجوعه)</small></span><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}"></label>
        <div class="calc-out"><span>المدة</span><b class="calc-days">${pd ? `${pd} يوم` : "—"}</b></div>`
     : t.input === "hours"
       ? `${dateF}<label>عدد الساعات<input type="number" data-k="hours" min="0" step="0.5" inputmode="decimal" value="${esc(r.hours)}"></label>
@@ -620,7 +620,7 @@ function calcRows() {
     <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
     <p class="calc-hint"><i data-lucide="info"></i>${t.hint}</p>
     <div class="calc-fields">${fields}</div>
-    <label>ملاحظة <small class="muted">(اختياري)</small><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>
+    <label><span>ملاحظة <small class="muted">(اختياري)</small></span><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>
     <div class="actions">
       <button type="button" class="btn primary" data-act="calc-commit"><i data-lucide="${editing ? "check" : "plus"}"></i>${editing ? "حفظ التعديل" : "إضافة إلى القائمة"}</button>
       ${editing ? `<button type="button" class="btn" data-act="calc-cancel-edit">إلغاء</button>` : ""}
