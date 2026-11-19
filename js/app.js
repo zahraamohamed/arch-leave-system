@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191210";
-import { COLLEGE } from "./config.js?v=202611191210";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191210";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191210";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191210";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191210";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191234";
+import { COLLEGE } from "./config.js?v=202611191234";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191234";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191234";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191234";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191234";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -55,7 +55,8 @@ const rowDays = (r) => {
   return Number(r.days) || 0;
 };
 // الأيام التلقائية من "من" و"إلى": التوقف بالأيام التقويمية، والمخصومة حسب إعدادات العطل
-const autoDays = (r) => (!r.from || !r.to || r.to < r.from) ? "" : String((CALC_TYPES[r.type]?.effect === "pause" ? periodDays(r.from, r.to) : countDays(r.from, r.to, R())) || "");
+// بالحاسبة: كل الأيام من "من" لـ "إلى" تنحسب، والجمعة والسبت ضمنها (مثل أمر الإجازة)
+const autoDays = (r) => (!r.from || !r.to || r.to < r.from) ? "" : String(periodDays(r.from, r.to) || "");
 // ترتيب الإجازات حسب التاريخ (اللي بدون تاريخ بالأخير)
 const byDate = (a, b) => (a.from || "9999").localeCompare(b.from || "9999") || (a.to || a.from || "").localeCompare(b.to || b.from || "");
 const sortLeaves = (list) => list.slice().sort(byDate);
@@ -65,7 +66,7 @@ function overlaps(list) {
   return list.map((a, i) => { const x = span(a); if (!x) return [];
     return list.map((b, j) => { if (i === j) return 0; const y = span(b); return y && x[0] <= y[1] && y[0] <= x[1] ? j + 1 : 0; }).filter(Boolean); });
 }
-const autoEnd = (r) => endDateFor(r.from, r.days, R(), CALC_TYPES[r.type]?.effect === "pause");
+const autoEnd = (r) => endDateFor(r.from, r.days, R(), true);
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
@@ -636,7 +637,7 @@ function calcRows() {
     ${editing ? `<div class="calc-editing"><i data-lucide="pencil"></i>تعدّل الإجازة رقم ${c.editIdx + 1}</div>` : ""}
     <div class="lbl">نوع الإجازة</div>
     <div class="type-chips" role="radiogroup">${Object.entries(CALC_TYPES).filter(([k, x]) => !x.hidden || k === r.type).map(([k, x]) => `<button type="button" role="radio" aria-checked="${k === r.type}" class="chip${k === r.type ? " on" : ""}" data-act="calc-type" data-v="${k}">${x.name}</button>`).join("")}</div>
-    <p class="calc-hint"><i data-lucide="info"></i>${t.hint}${t.input === "hours" ? "" : " اختر من وإلى والأيام تنحسب وحدها، أو اكتب عدد الأيام مباشرة. التاريخ تكدر تختاره من التقويم أو تكتبه (مثل 2/2/2024)."}</p>
+    <p class="calc-hint"><i data-lucide="info"></i>${t.hint}${t.input === "hours" ? "" : " اختر من وإلى والأيام تنحسب وحدها (الجمعة والسبت ضمنها)، أو اكتب عدد الأيام مباشرة. التاريخ تكدر تختاره من التقويم أو تكتبه (مثل 2/2/2024)."}</p>
     <div class="calc-fields">${fields}</div>
     <label><span>ملاحظة <small class="muted">(اختياري)</small></span><input type="text" data-k="note" value="${esc(r.note)}" placeholder="مثلاً: رقم الأمر الإداري"></label>
     <div class="actions">
