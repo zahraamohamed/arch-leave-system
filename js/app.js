@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191204";
-import { COLLEGE } from "./config.js?v=202611191204";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191204";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191204";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191204";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191204";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191209";
+import { COLLEGE } from "./config.js?v=202611191209";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191209";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191209";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191209";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191209";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -56,6 +56,15 @@ const rowDays = (r) => {
 };
 // الأيام التلقائية من "من" و"إلى": التوقف بالأيام التقويمية، والمخصومة حسب إعدادات العطل
 const autoDays = (r) => (!r.from || !r.to || r.to < r.from) ? "" : String((CALC_TYPES[r.type]?.effect === "pause" ? periodDays(r.from, r.to) : countDays(r.from, r.to, R())) || "");
+// ترتيب الإجازات حسب التاريخ (اللي بدون تاريخ بالأخير)
+const byDate = (a, b) => (a.from || "9999").localeCompare(b.from || "9999") || (a.to || a.from || "").localeCompare(b.to || b.from || "");
+const sortLeaves = (list) => list.slice().sort(byDate);
+// لكل إجازة: أرقام الإجازات اللي تتداخل وياها بالتاريخ (نفس اليوم أو فترات متداخلة)
+function overlaps(list) {
+  const span = (r) => r.from ? [r.from, r.to && r.to >= r.from ? r.to : r.from] : null;
+  return list.map((a, i) => { const x = span(a); if (!x) return [];
+    return list.map((b, j) => { if (i === j) return 0; const y = span(b); return y && x[0] <= y[1] && y[0] <= x[1] ? j + 1 : 0; }).filter(Boolean); });
+}
 const autoEnd = (r) => endDateFor(r.from, r.days, R(), CALC_TYPES[r.type]?.effect === "pause");
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
@@ -265,7 +274,7 @@ function calcDetailsCard(e) {
       <span class="actions"><span class="muted small">مباشرة ${fmtDate(cd.start)} · محسوبة لغاية ${fmtDate(cd.asOf)} · ${esc(cd.savedByName || "")}</span>${isSuper() ? `<a class="btn sm" href="#/calc?emp=${e.id}"><i data-lucide="pencil"></i>تعديل / إضافة إجازة</a>` : ""}</span></div>
     <div class="table-wrap"><table class="table">
       <thead><tr><th>النوع</th><th>التاريخ</th><th>المدة والأثر</th><th>ملاحظة</th></tr></thead>
-      <tbody>${cd.rows.map((r) => `<tr class="cd-${(CALC_TYPES[r.type] || {}).effect}">
+      <tbody>${sortLeaves(cd.rows).map((r) => `<tr class="cd-${(CALC_TYPES[r.type] || {}).effect}">
         <td><b>${esc((CALC_TYPES[r.type] || {}).name || r.type)}</b></td>
         <td>${r.from ? fmtDate(r.from) : "—"}${r.to ? " ← " + fmtDate(r.to) : ""}</td>
         <td>${eff(r)}</td>
@@ -574,7 +583,7 @@ function loadCalcFor(e) {
   ui.calc = {
     empId: e.id, category: e.category, start: startDateOf(e), asOf: today(),
     name: "", title: "", department: "", empNo: "",
-    saved: (saved.rows || []).map((r) => ({ ...newCalcRow(r.type), ...r })), dirty: false, editIdx: null,
+    saved: sortLeaves((saved.rows || []).map((r) => ({ ...newCalcRow(r.type), ...r }))), dirty: false, editIdx: null,
     rows: [newCalcRow()]
   };
 }
@@ -660,6 +669,7 @@ function commitDrafts() {
   }
   const row = { ...r };
   if (c.editIdx != null) c.saved[c.editIdx] = row; else c.saved = (c.saved || []).concat([row]);
+  c.saved = sortLeaves(c.saved);
   c.editIdx = null; c.rows = [newCalcRow(r.type)]; c.dirty = true;
   return 1;
 }
@@ -682,9 +692,11 @@ function calcSavedTable() {
   const ord = sum((r) => r.type === "ordinary" || r.type === "hourly" || (r.type === "absence" && r.mode === "deduct"));
   const sick = sum((r) => r.type === "sick");
   const pause = sum((r) => CALC_TYPES[r.type]?.effect === "pause" || (r.type === "absence" && r.mode !== "deduct"));
+  const dup = overlaps(list), nDup = dup.filter((d) => d.length).length;
   return `<div class="calc-sys">${head}
+    ${nDup ? `<div class="note warn"><i data-lucide="copy"></i> أكو ${nDup} إجازات تواريخها متداخلة ويه إجازات ثانية (معلّمة بالأحمر). تأكد منها حتى ما تنحسب مرتين.</div>` : ""}
     <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
-    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td>${x.when}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
+    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td>${x.when}${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
       <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل" aria-label="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف" aria-label="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody>
     <tfoot><tr><td colspan="7">المجموع: ${ord ? `اعتيادي <b>${num(ord)}</b> يوم` : ""}${sick ? ` · مرضي <b>${num(sick)}</b> يوم` : ""}${pause ? ` · بدون استحقاق <b>${num(pause)}</b> يوم` : ""}</td></tr></tfoot></table></div></div>`;
 }
@@ -819,7 +831,7 @@ function allLeaves(e) {
   const sys = visibleRequests().filter((r) => r.employeeId === e.id && r.kind !== "withdrawal" && r.status === "approved")
     .map((r) => ({ src: "النظام", type: r.type, name: r.typeName, from: r.startDate, to: r.endDate, days: r.total || 0, hours: r.unit === "hour" ? r.hours || 0 : 0,
       effect: r.deducts === "balance" ? (payText(r) || "من الاعتيادي") : r.deducts === "sick" ? "من المرضي" : (typeOf(r.type)?.pausesAccrual ? "توقف الاستحقاق" : PAY[r.pay] || "—"), note: r.serial }));
-  return [...prev, ...sys].sort((a, b) => (a.from || "").localeCompare(b.from || ""));
+  return [...prev, ...sys].sort(byDate);
 }
 function leaveSummary(e) {
   const map = new Map();
