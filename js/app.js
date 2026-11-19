@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191320";
-import { COLLEGE } from "./config.js?v=202611191320";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191320";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191320";
-import { initDatePickers, setDateMin, setDateValue, parseLooseDate } from "./datepicker.js?v=202611191320";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191320";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191328";
+import { COLLEGE } from "./config.js?v=202611191328";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191328";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191328";
+import { initDatePickers, setDateMin, setDateValue, parseLooseDate } from "./datepicker.js?v=202611191328";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191328";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -39,9 +39,9 @@ const CALC_TYPES = {
   ordinary:  { name: "اعتيادية",                 input: "days",   effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي." },
   hourly:    { name: "زمنية (ساعات)",            input: "hours",  effect: "deduct",  hint: "تنخصم من الرصيد الاعتيادي — كل 7 ساعات = يوم." },
   sick:      { name: "مرضية",                    input: "days",   effect: "sick",    hint: "تنخصم من الرصيد المرضي." },
-  prenatal:  { name: "قبل الوضع",                input: "days", effect: "pause",   hint: PAUSE_HINT },
-  postnatal: { name: "بعد الوضع",                input: "days", effect: "pause",   hint: PAUSE_HINT },
-  delivery:  { name: "حمل ووضع",                 input: "days", effect: "pause",   hint: PAUSE_HINT, hidden: true }, // للبيانات القديمة فقط
+  prenatal:  { name: "قبل الوضع",                input: "days", effect: "service", hint: "ما تنخصم من الرصيد، وتنحسب خدمة فيستحق عنها إجازة اعتيادية (م43/6: 72 يوم براتب تام، 21 منها قبل الوضع)." },
+  postnatal: { name: "بعد الوضع",                input: "days", effect: "service", hint: "ما تنخصم من الرصيد، وتنحسب خدمة فيستحق عنها إجازة اعتيادية (م43/6: 72 يوم براتب تام، 21 منها قبل الوضع)." },
+  delivery:  { name: "حمل ووضع",                 input: "days", effect: "service", hint: PAUSE_HINT, hidden: true }, // للبيانات القديمة فقط
   maternity: { name: "أمومة (رعاية طفل)",        input: "days", effect: "pause",   hint: PAUSE_HINT },
   unpaid:    { name: "بدون راتب",                input: "days", effect: "pause",   hint: PAUSE_HINT },
   study:     { name: "دراسية",                   input: "days", effect: "service", hint: "ما تنخصم من الرصيد، وتنحسب خدمة فعلية فيستحق عنها إجازة اعتيادية (م50/4)." },

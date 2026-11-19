@@ -28,8 +28,8 @@ export const DEFAULT_RULES = {
     { key: "sick",       name: "مرضية",               deducts: "sick",    unit: "day",  for: ["staff", "teaching"] },
     // pausesAccrual: مدة الإجازة ما ينحسبلها استحقاق (لا تُمنح إجازة اعتيادية عن إجازة أخرى، والبدون راتب لا تُعد خدمة)
     { key: "unpaid",     name: "بدون راتب",           deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "unpaid", pausesAccrual: true },
-    { key: "prenatal",   name: "قبل الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
-    { key: "postnatal",  name: "بعد الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
+    { key: "prenatal",   name: "قبل الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid" },  // م43/6: تنحسب خدمة
+    { key: "postnatal",  name: "بعد الوضع", deducts: "none", unit: "day", for: ["staff", "teaching"], fixedPay: "paid" },
     { key: "maternity",  name: "أمومة (رعاية طفل)",   deducts: "none",    unit: "day",  for: ["staff", "teaching"], fixedPay: "paid", pausesAccrual: true },
     { key: "summer",     name: "العطلة الصيفية",      deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
     { key: "sabbatical", name: "تفرغ علمي",           deducts: "none",    unit: "day",  for: ["teaching"],          fixedPay: "paid" },
@@ -199,7 +199,7 @@ export function accrualFor(emp, rules, target = monthKey(), pauses = []) {
   if (capped) newB = Math.max(bal, c.max);
   const newS = round2(sick + addS);
   const label = c.accrual === "monthly"
-    ? `استحقاق لغاية ${target}${pausedTotal ? ` (موقوف ${pausedTotal} يوم: أمومة/وضع/بدون راتب)` : ""}`
+    ? `استحقاق لغاية ${target}${pausedTotal ? ` (موقوف ${pausedTotal} يوم: أمومة/بدون راتب)` : ""}`
     : (labels.join(" · ") || `تحديث ${target}`);
   const capNote = capped ? ` — وصل الحد ${c.max} يوم (م43/3)` : "";
   return { target, balance: newB, dBalance: round2(newB - bal), sick: newS, dSick: round2(newS - sick), label: label + capNote };
