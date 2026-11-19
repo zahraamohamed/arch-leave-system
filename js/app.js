@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611190855";
-import { COLLEGE } from "./config.js?v=202611190855";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190855";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190855";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190855";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190855";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191123";
+import { COLLEGE } from "./config.js?v=202611191123";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191123";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191123";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191123";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191123";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -586,6 +586,7 @@ function calcView(params) {
         </div>
         <div class="step"><span>2</span>إجازاته السابقة <small class="muted">— عدّل أي خانة مباشرة، أو احذف السطر</small></div>
         ${c.empId && systemLeavesFor(c.empId, c.start, c.asOf).count ? `<div class="note">إجازاته المسجلة بالنظام (${systemLeavesFor(c.empId, c.start, c.asOf).count}) تنحسب وحدها — اكتب هنا بس الإجازات اللي قبل النظام.</div>` : ""}
+        ${calcMissingNote()}
         <div id="calcRows">${calcRows()}</div>
         <div class="actions">${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
         <div id="calcSys">${calcSystemTable()}</div>
@@ -650,6 +651,22 @@ function systemLeavesFor(empId, start, asOf) {
   };
 }
 
+// منتسب أُضيف قبل ميزة حفظ الإجازات: ما عنده أسطر محفوظة، فنوضح الفرق ونعرض تعبئته بسطر واحد
+function calcGap() {
+  const e = empById(ui.calc.empId); if (!e || e.calc?.rows?.length) return null;
+  const blank = ui.calc.rows.every((r) => !r.days && !r.hours && !r.from);
+  if (!blank) return null;
+  const d = calcData(); if (!d) return null;
+  return { e, ord: round2(d.final - (e.balance || 0)), sick: round2(d.sickLeft - (e.sick || 0)) };
+}
+function calcMissingNote() {
+  const g = calcGap(); if (!g) return "";
+  const parts = [g.ord > 0 ? `اعتيادي ${num(g.ord)} يوم` : "", g.sick > 0 ? `مرضي ${num(g.sick)} يوم` : ""].filter(Boolean).join(" و ");
+  return `<div class="note warn">ما محفوظ لـ${esc(g.e.name)} تفاصيل إجازات بالحاسبة، لأن انضاف قبل ميزة الحفظ، فالجدول فاضي.
+    ${parts ? `<br>الفرق بين المستحق ورصيده الحالي: <b>${parts}</b> (إجازات مأخوذة سابقاً بدون تفاصيل).
+    <br>اكتب إجازاته بالتفصيل واضغط "حفظ الإجازات فقط"، أو
+    <button type="button" class="btn sm" data-act="calc-fill-gap"><i data-lucide="list-plus"></i>أضف الفرق كسطر واحد</button>` : "<br>اكتب إجازاته بالجدول واضغط \"حفظ الإجازات فقط\"."}</div>`;
+}
 function calcData() {
   const c = ui.calc, rows = c.rows;
   const sys = systemLeavesFor(c.empId, c.start, c.asOf);
@@ -1002,6 +1019,13 @@ document.addEventListener("click", async (ev) => {
         if (p === "denied") toast("الإشعارات محظورة — فعّلها من إعدادات المتصفح لهذا الموقع", "bad");
         else if (p === "unsupported") toast("هذا المتصفح لا يدعم الإشعارات — على الآيفون أضف الموقع للشاشة الرئيسية أولاً", "bad");
         render(); break;
+      }
+      case "calc-fill-gap": {
+        const g = calcGap(); if (!g) break;
+        const rows = [];
+        if (g.ord > 0) rows.push({ ...newCalcRow("ordinary"), days: String(g.ord), note: "إجازات سابقة غير مفصلة" });
+        if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة" });
+        ui.calc.rows = rows; render(); toast("انضاف الفرق — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
       }
       case "calc-add-row": ui.calc.rows.push(newCalcRow(v || "ordinary")); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
       case "calc-del-row": { const rr = ui.calc.rows[Number(id)]; if ((rr.days || rr.hours || rr.from || rr.note) && !confirm(`حذف الإجازة رقم ${Number(id) + 1} (${typeName(rr.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ أو اعتماد.`)) break; }
