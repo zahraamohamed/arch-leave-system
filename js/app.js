@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611190850";
-import { COLLEGE } from "./config.js?v=202611190850";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190850";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190850";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190850";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190850";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611190855";
+import { COLLEGE } from "./config.js?v=202611190855";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190855";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190855";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190855";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190855";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -212,7 +212,7 @@ function employeeView(id) {
         ${isAdmin() ? `<a class="btn primary" href="#/new?emp=${e.id}"><i data-lucide="file-plus-2"></i>طلب إجازة</a>
         ${isSuper() ? `<a class="btn" href="#/calc?emp=${e.id}"><i data-lucide="calculator"></i>تعديل الرصيد بالحاسبة</a>` : ""}
         <button class="btn ${isSuper() ? "ghost" : ""}" data-act="adjust" data-id="${e.id}"><i data-lucide="plus-minus"></i>${isSuper() ? "تعديل يدوي" : "تعديل الرصيد"}</button>
-        <button class="btn" data-act="edit-emp" data-id="${e.id}"><i data-lucide="pencil"></i>تعديل</button>` : ""}
+        <button class="btn" data-act="edit-emp" data-id="${e.id}"><i data-lucide="pencil"></i>تعديل بيانات المنتسب</button>` : ""}
         <a class="btn" href="#/statement/${e.id}"><i data-lucide="printer"></i>طباعة كشف الإجازات</a>
         <button class="btn" data-act="export-emp" data-id="${e.id}"><i data-lucide="file-spreadsheet"></i>Excel</button>
       </div></div>
@@ -584,10 +584,11 @@ function calcView(params) {
           <label>تاريخ المباشرة<input type="date" name="start" value="${esc(c.start)}" required></label>
           <label>لغاية تاريخ<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
         </div>
-        <div class="step"><span>2</span>الإجازات والفترات السابقة</div>
+        <div class="step"><span>2</span>إجازاته السابقة <small class="muted">— عدّل أي خانة مباشرة، أو احذف السطر</small></div>
         ${c.empId && systemLeavesFor(c.empId, c.start, c.asOf).count ? `<div class="note">إجازاته المسجلة بالنظام (${systemLeavesFor(c.empId, c.start, c.asOf).count}) تنحسب وحدها — اكتب هنا بس الإجازات اللي قبل النظام.</div>` : ""}
         <div id="calcRows">${calcRows()}</div>
         <div class="actions">${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
+        <div id="calcSys">${calcSystemTable()}</div>
         <ul class="muted small calc-help">
           <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
           <li><b>مرضية:</b> تنخصم من الرصيد المرضي.</li>
@@ -600,28 +601,44 @@ function calcView(params) {
 }
 
 function calcRows() {
-  return ui.calc.rows.map((r, i) => {
+  const head = `<div class="calc-head"><span>#</span><span>النوع</span><span>التاريخ / من</span><span>إلى / المدة</span><span>الأيام</span><span>ملاحظة</span><span></span></div>`;
+  return head + ui.calc.rows.map((r, i) => {
     const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
     const pd = periodDays(r.from, r.to);
     const field = t.input === "absence"
       ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="أيام الغياب" value="${esc(r.days)}"><select data-k="mode" class="calc-mode" title="شلون ينحسب الغياب"><option value="pause" ${r.mode !== "deduct" ? "selected" : ""}>يوقف الاستحقاق</option><option value="deduct" ${r.mode === "deduct" ? "selected" : ""}>يُخصم من الرصيد</option></select>`
       : t.input === "period"
-      ? `<input type="date" data-k="from" value="${esc(r.from)}" title="من"><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}" title="إلى (تاريخ الرجوع الفعلي إذا قطعها)"><span class="calc-days">${pd ? `${pd} يوم` : "—"}</span>`
-      : t.input === "hours"
-        ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="hours" min="0" step="0.5" placeholder="الساعات" value="${esc(r.hours)}"><span class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</span>`
-        : `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}"><span class="calc-days"></span>`;
+        ? `<input type="date" data-k="from" value="${esc(r.from)}" title="من"><input type="date" data-k="to" value="${esc(r.to)}" min="${esc(r.from)}" title="إلى (تاريخ الرجوع الفعلي إذا قطعها)"><span class="calc-days">${pd ? `${pd} يوم` : "—"}</span>`
+        : t.input === "hours"
+          ? `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="hours" min="0" step="0.5" placeholder="الساعات" value="${esc(r.hours)}"><span class="calc-days">${r.hours ? `${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم` : "—"}</span>`
+          : `<input type="date" data-k="from" value="${esc(r.from)}" title="التاريخ (اختياري)"><input type="number" data-k="days" min="0" step="0.5" placeholder="الأيام" value="${esc(r.days)}"><span class="calc-days">${r.days ? `${num(r.days)} يوم` : "—"}</span>`;
     return `<div class="calc-row eff-${t.effect}" data-i="${i}">
+      <span class="calc-num">${i + 1}</span>
       <select data-k="type">${Object.entries(CALC_TYPES).map(([k, x]) => `<option value="${k}" ${k === r.type ? "selected" : ""}>${x.name}</option>`).join("")}</select>
       ${field}
       <input type="text" data-k="note" placeholder="ملاحظة" value="${esc(r.note)}">
-      <button type="button" class="icon-btn" data-act="calc-del-row" data-id="${i}" title="حذف"><i data-lucide="x"></i></button>
+      <button type="button" class="icon-btn del" data-act="calc-del-row" data-id="${i}" title="حذف هذه الإجازة"><i data-lucide="trash-2"></i></button>
     </div>`;
   }).join("");
 }
 
+// جدول إجازات المنتسب المسجلة بالنظام (للاطلاع — تنحسب وحدها)
+function calcSystemTable() {
+  const c = ui.calc;
+  if (!c.empId) return "";
+  const list = systemLeavesFor(c.empId, c.start, c.asOf).list;
+  if (!list.length) return "";
+  return `<div class="calc-sys"><div class="step"><span>3</span>إجازاته المسجلة بالنظام <small class="muted">(تنحسب وحدها — تتغير عن طريق السحب)</small></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>الرقم</th><th>النوع</th><th>الفترة</th><th class="n">المدة</th><th>الأثر</th><th></th></tr></thead>
+    <tbody>${list.map((r) => `<tr><td class="mono">${esc(r.serial)}</td><td>${esc(r.typeName)}</td><td>${fmtDate(r.startDate)}${r.endDate && r.endDate !== r.startDate ? " ← " + fmtDate(r.endDate) : ""}</td>
+      <td class="n">${r.unit === "hour" ? num(r.hours) + " س" : num(r.total)}</td>
+      <td>${r.deducts === "balance" ? (payText(r) || "من الاعتيادي") : r.deducts === "sick" ? "من المرضي" : typeOf(r.type)?.pausesAccrual ? "توقف الاستحقاق" : "—"}</td>
+      <td class="act"><a class="icon-btn" href="#/form/${r.id}" title="الاستمارة"><i data-lucide="file-text"></i></a></td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
 // إجازات المنتسب الموافق عليها بالنظام (تنحسب وحدها بالحاسبة حتى ما يضيع شي عند إعادة الاعتماد)
 function systemLeavesFor(empId, start, asOf) {
-  if (!empId) return { paid: 0, sick: 0, periods: [], count: 0, pausedDays: 0 };
+  if (!empId) return { paid: 0, sick: 0, periods: [], count: 0, list: [] };
   const pauseKeys = R().types.filter((t) => t.pausesAccrual).map((t) => t.key);
   const list = S().requests.filter((r) => r.employeeId === empId && r.kind !== "withdrawal" && r.status === "approved" && !r.deleted
     && (!start || (r.endDate || r.startDate) >= start) && (!asOf || r.startDate <= asOf));
@@ -629,7 +646,7 @@ function systemLeavesFor(empId, start, asOf) {
   return {
     paid: round2(list.filter((r) => r.deducts === "balance").reduce((a, r) => a + (r.paid || 0), 0)),
     sick: round2(list.filter((r) => r.deducts === "sick").reduce((a, r) => a + (r.paid || 0), 0)),
-    periods, count: list.length
+    periods, count: list.length, list
   };
 }
 
@@ -699,7 +716,7 @@ function calcSnapshot(d) {
   return { start: c.start, asOf: c.asOf, category: c.category, rows,
     result: { ordinary: d.ordinary, taken: d.taken, paused: d.paused, balance: Math.max(0, d.final), sick: d.sick, sickTaken: d.sickTaken, sickLeft: Math.max(0, d.sickLeft) } };
 }
-function refreshCalc() { const r = $("#calcResult"); if (r) { r.innerHTML = calcResult(); icons(); } }
+function refreshCalc() { const r = $("#calcResult"); if (r) { r.innerHTML = calcResult(); } const sy = $("#calcSys"); if (sy) sy.innerHTML = calcSystemTable(); icons(); }
 
 
 /* ------------------------- leave summary & statement ------------------------- */
@@ -987,7 +1004,8 @@ document.addEventListener("click", async (ev) => {
         render(); break;
       }
       case "calc-add-row": ui.calc.rows.push(newCalcRow(v || "ordinary")); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
-      case "calc-del-row": ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push(newCalcRow()); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
+      case "calc-del-row": { const rr = ui.calc.rows[Number(id)]; if ((rr.days || rr.hours || rr.from || rr.note) && !confirm(`حذف الإجازة رقم ${Number(id) + 1} (${typeName(rr.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ أو اعتماد.`)) break; }
+        ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push(newCalcRow()); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
       case "calc-apply": {
         const d = calcData(), e = empById(ui.calc.empId);
         const nb = Math.max(0, d.final), ns = Math.max(0, d.sickLeft);
