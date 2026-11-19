@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611190846";
-import { COLLEGE } from "./config.js?v=202611190846";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190846";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190846";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190846";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190846";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611190850";
+import { COLLEGE } from "./config.js?v=202611190850";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611190850";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611190850";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611190850";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611190850";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -207,7 +207,7 @@ function employeeView(id) {
   const yp = yearPaid(e), cap = R().categories.teaching.maxPaidPerYear;
   return shell(`
     <div class="page-head"><div><a class="back" href="#/employees">→ المنتسبون</a><h2>${esc(e.name)}</h2>
-      <p>${tag(e.category)} ${esc([e.title, e.department, e.empNo && "رقم " + e.empNo, e.startDate && "مباشرة " + fmtDate(e.startDate)].filter(Boolean).join(" · "))}${e.active === false ? ` <span class="tag off">مؤرشف</span>` : ""}</p></div>
+      <p>${tag(e.category)} ${esc([e.title, e.department, e.empNo && "رقم " + e.empNo, startDateOf(e) && "مباشرة " + fmtDate(startDateOf(e))].filter(Boolean).join(" · "))}${e.active === false ? ` <span class="tag off">مؤرشف</span>` : ""}</p></div>
       <div class="actions">
         ${isAdmin() ? `<a class="btn primary" href="#/new?emp=${e.id}"><i data-lucide="file-plus-2"></i>طلب إجازة</a>
         ${isSuper() ? `<a class="btn" href="#/calc?emp=${e.id}"><i data-lucide="calculator"></i>تعديل الرصيد بالحاسبة</a>` : ""}
@@ -236,7 +236,7 @@ function employeeView(id) {
 function calcDetailsCard(e) {
   const cd = e.calc;
   if (!cd || !(cd.rows || []).length) {
-    return isSuper() ? `<div class="card calc-details empty-cd"><div class="card-h"><h3>تفاصيل الإجازات السابقة</h3><a class="btn sm" href="#/calc?emp=${e.id}"><i data-lucide="calculator"></i>احسب رصيده بالحاسبة</a></div><p class="muted small">ما انحفظت إجازات سابقة لهذا المنتسب بعد. افتح الحاسبة، اكتب تاريخ مباشرته وإجازاته، واعتمد.</p></div>` : "";
+    return isSuper() ? `<div class="card calc-details empty-cd"><div class="card-h"><h3>تفاصيل الإجازات السابقة</h3><a class="btn sm" href="#/calc?emp=${e.id}"><i data-lucide="calculator"></i>احسب رصيده بالحاسبة</a></div><p class="muted small">ما انحفظت تفاصيل إجازات سابقة لهذا المنتسب بعد${startDateOf(e) ? ` (تاريخ مباشرته ${fmtDate(startDateOf(e))} جاهز بالحاسبة)` : ""}. افتح الحاسبة، اكتب إجازاته، واضغط "اعتماد" أو "حفظ الإجازات فقط".</p></div>` : "";
   }
   const hpd = R().hoursPerDay;
   const eff = (r) => {
@@ -546,10 +546,17 @@ function formView(id) {
 
 
 /* ----------------------------- calculator ----------------------------- */
+// للمنتسبين القدامى: تاريخ المباشرة كان ينكتب بالملاحظات فقط ("مباشرة 2/2/2024")
+function startDateOf(e) {
+  if (e.startDate) return e.startDate;
+  if (e.calc?.start) return e.calc.start;
+  const m = (e.notes || "").match(/مباشرة\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : "";
+}
 function loadCalcFor(e) {
   const saved = e.calc || {};
   ui.calc = {
-    empId: e.id, category: e.category, start: e.startDate || saved.start || "", asOf: today(),
+    empId: e.id, category: e.category, start: startDateOf(e), asOf: today(),
     name: "", title: "", department: "", empNo: "",
     rows: (saved.rows && saved.rows.length ? saved.rows.map((r) => ({ ...newCalcRow(r.type), ...r })) : [newCalcRow()])
   };
@@ -677,7 +684,8 @@ function calcResult() {
     <p class="muted small">الاحتساب: ${rule}. المرضية 30 يوم عن كل سنة خدمة محتسبة كاملة (م46).</p>
     <div class="calc-apply noprint">
       ${e ? `<p class="small">رصيد ${esc(e.name)} الحالي: اعتيادي <b>${days(e.balance)}</b> · مرضي <b>${days(e.sick || 0)}</b></p>
-        <button type="button" class="btn primary block" data-act="calc-apply"><i data-lucide="check"></i>اعتماد الرصيدين للمنتسب</button>`
+        <button type="button" class="btn primary block" data-act="calc-apply"><i data-lucide="check"></i>اعتماد الرصيدين وحفظ الإجازات</button>
+        <button type="button" class="btn block" data-act="calc-save" style="margin-top:8px"><i data-lucide="save"></i>حفظ الإجازات فقط (بدون تغيير الرصيد)</button>`
       : `<button type="button" class="btn primary block" data-act="calc-add-emp"><i data-lucide="user-plus"></i>إضافة كمنتسب جديد بهذا الرصيد</button>
         <p class="muted small">ينضاف برصيد اعتيادي ${days(Math.max(0, d.final))} ومرضي ${days(Math.max(0, d.sickLeft))}، والاستحقاق الشهري يكمل وحده من الشهر الجاي.</p>`}
       ${notToday ? `<div class="note warn">"لغاية تاريخ" مو اليوم — الرصيد المعتمد يكون لغاية ${fmtDate(c.asOf)}، والاستحقاق التلقائي يبدأ من الشهر الحالي.</div>` : ""}
@@ -748,7 +756,7 @@ function statementView(id) {
       <table>
         <tr><th>الاسم</th><td>${esc(e.name)}</td><th>الصنف</th><td>${CATEGORIES[e.category]}</td></tr>
         <tr><th>العنوان الوظيفي</th><td>${esc(e.title) || "—"}</td><th>القسم / الشعبة</th><td>${esc(e.department) || "—"}</td></tr>
-        <tr><th>الرقم الوظيفي</th><td>${esc(e.empNo) || "—"}</td><th>تاريخ المباشرة</th><td>${e.startDate ? fmtDate(e.startDate) : "—"}</td></tr>
+        <tr><th>الرقم الوظيفي</th><td>${esc(e.empNo) || "—"}</td><th>تاريخ المباشرة</th><td>${startDateOf(e) ? fmtDate(startDateOf(e)) : "—"}</td></tr>
         <tr><th>الرصيد الاعتيادي</th><td><b>${days(e.balance)}</b></td><th>الرصيد المرضي</th><td><b>${days(e.sick || 0)}</b></td></tr>
         ${isT ? `<tr><th>براتب بالسنة الدراسية</th><td colspan="3">${num(yearPaid(e))} من ${R().categories.teaching.maxPaidPerYear} يوم (${academicYear(today(), R().academicYearStartMonth)})</td></tr>` : ""}
       </table>
@@ -991,6 +999,11 @@ document.addEventListener("click", async (ev) => {
         if (dS) await store.adjustBalance(e.id, "sick", dS, `${why}: مرضي مستحق ${d.sick} − مأخوذ ${d.sickTaken}`);
         await store.saveCalc(e.id, calcSnapshot(d));
         toast("تم اعتماد الرصيد وحفظ تفاصيل الإجازات"); refreshCalc(); break;
+      }
+      case "calc-save": {
+        const e = empById(ui.calc.empId), d = calcData();
+        await store.saveCalc(e.id, calcSnapshot(d));
+        toast(`انحفظت تفاصيل إجازات ${e.name}`); break;
       }
       case "calc-add-emp": {
         const c = ui.calc, d = calcData();
