@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191209";
-import { COLLEGE } from "./config.js?v=202611191209";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191209";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191209";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191209";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191209";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191210";
+import { COLLEGE } from "./config.js?v=202611191210";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191210";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191210";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191210";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191210";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -696,7 +696,7 @@ function calcSavedTable() {
   return `<div class="calc-sys">${head}
     ${nDup ? `<div class="note warn"><i data-lucide="copy"></i> أكو ${nDup} إجازات تواريخها متداخلة ويه إجازات ثانية (معلّمة بالأحمر). تأكد منها حتى ما تنحسب مرتين.</div>` : ""}
     <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
-    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td>${x.when}${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
+    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td><span class="nw">${x.when}</span>${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
       <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل" aria-label="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف" aria-label="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody>
     <tfoot><tr><td colspan="7">المجموع: ${ord ? `اعتيادي <b>${num(ord)}</b> يوم` : ""}${sick ? ` · مرضي <b>${num(sick)}</b> يوم` : ""}${pause ? ` · بدون استحقاق <b>${num(pause)}</b> يوم` : ""}</td></tr></tfoot></table></div></div>`;
 }
