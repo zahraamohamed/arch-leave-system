@@ -530,3 +530,10 @@ span.flatpickr-weekday { font-size: 12.5px; font-weight: 600; color: var(--ink-3
 .leave-search input:focus { outline: 2px solid var(--navy-soft); border-color: var(--navy); }
 .calc-details tr.is-dup td { background: var(--bad-soft); }
 .st-dup { color: #b42318; font-size: 11px; }
+.leave-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.leave-tools .leave-search { margin: 0; flex: 1 1 260px; }
+.seg { display: inline-flex; align-items: center; gap: 4px; background: #f3f5f8; border-radius: 10px; padding: 3px; font-size: 13px; }
+.seg > span { color: var(--ink-3); padding-inline: 8px 4px; }
+.seg button { border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--ink-2); padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,.1); }
+.seg button:focus-visible { outline: 2px solid var(--navy); }

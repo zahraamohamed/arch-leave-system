@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191247";
-import { COLLEGE } from "./config.js?v=202611191247";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191247";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191247";
-import { initDatePickers, setDateMin, setDateValue, parseLooseDate } from "./datepicker.js?v=202611191247";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191247";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191251";
+import { COLLEGE } from "./config.js?v=202611191251";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays, endDateFor } from "./rules.js?v=202611191251";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191251";
+import { initDatePickers, setDateMin, setDateValue, parseLooseDate } from "./datepicker.js?v=202611191251";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191251";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -79,6 +79,16 @@ function dateQuery(text) {
   return "bad";
 }
 const inQuery = (r, q) => { if (!q) return true; if (q === "bad" || !r.from) return false; const to = r.to && r.to >= r.from ? r.to : r.from; return r.from <= q[1] && q[0] <= to; };
+// ترتيب العرض: حسب التاريخ أو آخر إضافة (الاختيار ينحفظ على هذا الجهاز)
+let leaveSort = "date";
+try { leaveSort = localStorage.getItem("arch-leave-sort") || "date"; } catch {}
+const displayOrder = (list) => {
+  const idx = list.map((_, i) => i);
+  return leaveSort === "added" ? idx.sort((a, b) => (list[b].addedAt || 0) - (list[a].addedAt || 0) || b - a) : idx;
+};
+const sortSwitch = (scope) => `<div class="seg noprint" role="group" aria-label="ترتيب الإجازات"><span>الترتيب:</span>
+  <button type="button" class="${leaveSort === "date" ? "on" : ""}" data-act="leave-sort" data-v="date" data-id="${scope}">حسب التاريخ</button>
+  <button type="button" class="${leaveSort === "added" ? "on" : ""}" data-act="leave-sort" data-v="added" data-id="${scope}">آخر إضافة</button></div>`;
 const searchBox = (id, val) => `<div class="leave-search noprint"><i data-lucide="search"></i><input id="${id}" value="${esc(val || "")}" placeholder="ابحث بالتاريخ: 2021 أو 2021/10 أو 2021/10/15" inputmode="numeric" autocomplete="off" dir="auto"></div>`;
 const autoEnd = (r) => endDateFor(r.from, r.days, R(), true);
 const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
@@ -287,7 +297,7 @@ function calcDetailsCard(e) {
   return `<div class="card calc-details">
     <div class="card-h"><h3>تفاصيل الإجازات السابقة</h3>
       <span class="actions"><span class="muted small">مباشرة ${fmtDate(cd.start)} · محسوبة لغاية ${fmtDate(cd.asOf)} · ${esc(cd.savedByName || "")}</span>${isSuper() ? `<a class="btn sm" href="#/calc?emp=${e.id}"><i data-lucide="pencil"></i>تعديل / إضافة إجازة</a>` : ""}</span></div>
-    ${searchBox("cdSearch", ui.cdQ)}
+    <div class="leave-tools">${searchBox("cdSearch", ui.cdQ)}${sortSwitch("cd")}</div>
     <div class="table-wrap"><table class="table">
       <thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th>المدة والأثر</th><th>ملاحظة</th></tr></thead>
       <tbody id="cdBody">${cdRows(e)}</tbody>
@@ -305,7 +315,7 @@ function cdRows(e) {
     if (r.type === "absence") return `${num(r.days)} يوم — ${r.mode === "deduct" ? "مخصوم من الرصيد" : "توقف الاستحقاق"}`;
     return `${num(r.days)} يوم — ${t.effect === "sick" ? "من المرضي" : "من الاعتيادي"}`;
   };
-  const rows = list.map((r, i) => [r, i]).filter(([r]) => inQuery(r, q));
+  const rows = displayOrder(list).map((i) => [list[i], i]).filter(([r]) => inQuery(r, q));
   if (!rows.length) return `<tr><td colspan="5" class="empty">${q === "bad" ? "اكتب التاريخ مثل 2021 أو 2021/10 أو 2021/10/15" : "ماكو إجازات بهذا التاريخ"}</td></tr>`;
   return rows.map(([r, i]) => `<tr class="cd-${(CALC_TYPES[r.type] || {}).effect}${dup[i].length ? " is-dup" : ""}">
         <td class="mono">${i + 1}</td>
@@ -698,7 +708,7 @@ function commitDrafts() {
     if (c.editIdx != null) { c.editIdx = null; c.rows = [newCalcRow()]; }
     return 0;
   }
-  const row = { ...r };
+  const row = { ...r, addedAt: r.addedAt || Date.now() };
   if (c.editIdx != null) c.saved[c.editIdx] = row; else c.saved = (c.saved || []).concat([row]);
   c.saved = sortLeaves(c.saved);
   c.editIdx = null; c.rows = [newCalcRow(r.type)]; c.dirty = true;
@@ -724,9 +734,9 @@ function calcSavedTable() {
   const sick = sum((r) => r.type === "sick");
   const pause = sum((r) => CALC_TYPES[r.type]?.effect === "pause" || (r.type === "absence" && r.mode !== "deduct"));
   const dup = overlaps(list), nDup = dup.filter((d) => d.length).length;
-  const q = dateQuery(ui.calc.q), shown = list.map((r, i) => i).filter((i) => inQuery(list[i], q));
+  const q = dateQuery(ui.calc.q), shown = displayOrder(list).filter((i) => inQuery(list[i], q));
   return `<div class="calc-sys">${head}
-    ${searchBox("calcSearch", ui.calc.q)}
+    <div class="leave-tools">${searchBox("calcSearch", ui.calc.q)}${sortSwitch("calc")}</div>
     ${nDup ? `<div class="note warn"><i data-lucide="copy"></i> أكو ${nDup} إجازات تواريخها متداخلة ويه إجازات ثانية (معلّمة بالأحمر). تأكد منها حتى ما تنحسب مرتين.</div>` : ""}
     <div class="table-wrap"><table class="table calc-list"><thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th class="n">المدة</th><th>تأثيرها</th><th>ملاحظة</th><th></th></tr></thead>
     <tbody>${!shown.length ? `<tr><td colspan="7" class="empty">${q === "bad" ? "اكتب التاريخ مثل 2021 أو 2021/10 أو 2021/10/15" : "ماكو إجازات بهذا التاريخ"}</td></tr>` : ""}${shown.map((i) => { const r = list[i]; const x = calcRowText(r); return `<tr class="${ui.calc.editIdx === i ? "is-editing" : ""}${dup[i].length ? " is-dup" : ""}"><td class="mono">${i + 1}</td><td><b>${esc(typeName(r.type))}</b></td><td><span class="nw">${x.when}</span>${dup[i].length ? `<span class="dup-tag" title="نفس تاريخ إجازة ثانية"><i data-lucide="copy"></i>مكررة مع ${dup[i].map((n) => `#${n}`).join("، ")}</span>` : ""}</td><td class="n">${x.amount}</td><td><span class="eff eff-${CALC_TYPES[r.type]?.effect}">${x.effect}</span></td><td class="muted">${esc(r.note || "")}</td>
@@ -843,7 +853,7 @@ function calcResult() {
 function calcSnapshot(d) {
   const c = ui.calc;
   const rows = allCalcRows()
-    .map((r) => ({ type: r.type, from: r.from || "", to: r.to || "", days: r.days || "", hours: r.hours || "", note: r.note || "", mode: r.mode || "pause" }));
+    .map((r) => ({ type: r.type, from: r.from || "", to: r.to || "", days: r.days || "", hours: r.hours || "", note: r.note || "", mode: r.mode || "pause", addedAt: r.addedAt || 0 }));
   return { start: c.start, asOf: c.asOf, category: c.category, rows,
     result: { ordinary: d.ordinary, taken: d.taken, paused: d.paused, balance: Math.max(0, d.final), sick: d.sick, sickTaken: d.sickTaken, sickLeft: Math.max(0, d.sickLeft) } };
 }
@@ -1137,9 +1147,15 @@ document.addEventListener("click", async (ev) => {
       case "calc-fill-gap": {
         const g = calcGap(); if (!g) break;
         const rows = [];
-        if (g.ord > 0) rows.push({ ...newCalcRow("ordinary"), days: String(g.ord), note: "إجازات سابقة غير مفصلة" });
-        if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة" });
+        if (g.ord > 0) rows.push({ ...newCalcRow("ordinary"), days: String(g.ord), note: "إجازات سابقة غير مفصلة", addedAt: Date.now() });
+        if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة", addedAt: Date.now() });
         ui.calc.saved = rows; ui.calc.dirty = true; render(); toast("انضاف الفرق للقائمة — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
+      }
+      case "leave-sort": {
+        leaveSort = v; try { localStorage.setItem("arch-leave-sort", v); } catch {}
+        if (id === "calc") { $("#calcSaved").innerHTML = calcSavedTable(); }
+        else { const e = empById(location.hash.split("/")[2]?.split("?")[0]); if (e) { $("#cdBody").innerHTML = cdRows(e); document.querySelectorAll('[data-act="leave-sort"]').forEach((b) => b.classList.toggle("on", b.dataset.v === v)); } }
+        icons(); break;
       }
       case "calc-type": { const r = ui.calc.rows[0]; r.type = v; if (CALC_TYPES[v].input === "hours") r.to = ""; else if (r.from && r.to) r.days = autoDays(r) || r.days; redrawCalcLists(); $("#calcRows input[data-k=from]")?.focus(); break; }
       case "calc-commit": {
