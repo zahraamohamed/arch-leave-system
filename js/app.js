@@ -1,9 +1,9 @@
-import { initStore, store, getState, subscribe } from "./store.js?v=202611191123";
-import { COLLEGE } from "./config.js?v=202611191123";
-import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191123";
-import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191123";
-import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191123";
-import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191123";
+import { initStore, store, getState, subscribe } from "./store.js?v=202611191129";
+import { COLLEGE } from "./config.js?v=202611191129";
+import { CATEGORIES, STATUS, PAY, ROLES, countDays, requestDays, payPlan, payText, round2, academicYear, paidInAcademicYear, serviceEntitlement, pausedDays, periodDays } from "./rules.js?v=202611191129";
+import { exportAll, exportEmployee, exportRequests, importTemplate, readImport } from "./excel.js?v=202611191129";
+import { initDatePickers, setDateMin, setDateValue } from "./datepicker.js?v=202611191129";
+import { initNotifications, enableNotifications, notify, permission } from "./notify.js?v=202611191129";
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $("#app");
@@ -44,7 +44,7 @@ const CALC_TYPES = {
   long:      { name: "إجازة طويلة (دراسية / أخرى)", input: "period", effect: "pause" },
   absence:   { name: "غياب",                     input: "absence", effect: "absence" }
 };
-const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
+const ui = { calc: { empId: "", category: "staff", start: "", asOf: "", name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] }, empFilter: "all", empSearch: "", reqFilter: { status: "all", cat: "all", kind: "all", q: "" }, newReq: {}, formsQ: "" };
 
 /* ------------------------------ shell ------------------------------ */
 function logoHTML(size = 44, full = false) {
@@ -558,7 +558,8 @@ function loadCalcFor(e) {
   ui.calc = {
     empId: e.id, category: e.category, start: startDateOf(e), asOf: today(),
     name: "", title: "", department: "", empNo: "",
-    rows: (saved.rows && saved.rows.length ? saved.rows.map((r) => ({ ...newCalcRow(r.type), ...r })) : [newCalcRow()])
+    saved: (saved.rows || []).map((r) => ({ ...newCalcRow(r.type), ...r })), dirty: false,
+    rows: [newCalcRow()]
   };
 }
 function calcView(params) {
@@ -584,11 +585,13 @@ function calcView(params) {
           <label>تاريخ المباشرة<input type="date" name="start" value="${esc(c.start)}" required></label>
           <label>لغاية تاريخ<input type="date" name="asOf" value="${esc(c.asOf)}" required></label>
         </div>
-        <div class="step"><span>2</span>إجازاته السابقة <small class="muted">— عدّل أي خانة مباشرة، أو احذف السطر</small></div>
+        <div class="step"><span>2</span>إضافة إجازة <small class="muted">— اختر النوع واكتب التفاصيل، وبعدين اضغط "أضف للجدول"</small></div>
         ${c.empId && systemLeavesFor(c.empId, c.start, c.asOf).count ? `<div class="note">إجازاته المسجلة بالنظام (${systemLeavesFor(c.empId, c.start, c.asOf).count}) تنحسب وحدها — اكتب هنا بس الإجازات اللي قبل النظام.</div>` : ""}
         ${calcMissingNote()}
         <div id="calcRows">${calcRows()}</div>
-        <div class="actions">${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
+        <div class="actions calc-commit"><button type="button" class="btn primary sm" data-act="calc-commit"><i data-lucide="corner-left-down"></i>أضف للجدول</button></div>
+        <div class="actions"><small class="muted">سطر جديد:</small>${Object.entries(CALC_TYPES).map(([k, t]) => `<button type="button" class="btn sm" data-act="calc-add-row" data-v="${k}"><i data-lucide="plus"></i>${t.name}</button>`).join("")}</div>
+        <div id="calcSaved">${calcSavedTable()}</div>
         <div id="calcSys">${calcSystemTable()}</div>
         <ul class="muted small calc-help">
           <li><b>اعتيادية وزمنية:</b> تنخصم من الرصيد الاعتيادي (الزمنية: كل ${R().hoursPerDay} ساعات = يوم).</li>
@@ -623,13 +626,44 @@ function calcRows() {
   }).join("");
 }
 
+const filledRow = (r) => !!(r.days || r.hours || (r.from && r.to) || (r.type === "absence" && r.days));
+const allCalcRows = () => (ui.calc.saved || []).concat(ui.calc.rows.filter(filledRow));
+// نقل الأسطر المعبّأة من خانات الإدخال إلى جدول الإجازات
+function commitDrafts() {
+  const f = ui.calc.rows.filter(filledRow);
+  if (!f.length) return 0;
+  ui.calc.saved = (ui.calc.saved || []).concat(f.map((r) => ({ ...r })));
+  ui.calc.rows = [newCalcRow(ui.calc.rows[ui.calc.rows.length - 1]?.type || "ordinary")];
+  ui.calc.dirty = true;
+  return f.length;
+}
+function calcRowText(r) {
+  const t = CALC_TYPES[r.type] || CALC_TYPES.ordinary;
+  const when = t.input === "period" ? `${fmtDate(r.from)} ← ${fmtDate(r.to)}` : (r.from ? fmtDate(r.from) : "—");
+  const amount = t.input === "period" ? `${periodDays(r.from, r.to)} يوم`
+    : t.input === "hours" ? `${num(r.hours)} ساعة (${num(round2((Number(r.hours) || 0) / R().hoursPerDay))} يوم)` : `${num(r.days)} يوم`;
+  const effect = r.type === "sick" ? "من المرضي" : (r.type === "ordinary" || r.type === "hourly") ? "من الاعتيادي"
+    : r.type === "absence" ? (r.mode === "deduct" ? "يُخصم من الاعتيادي" : "يوقف الاستحقاق") : "يوقف الاستحقاق";
+  return { when, amount, effect };
+}
+// جدول إجازات المنتسب المحفوظة بالحاسبة (تعديل = ترجع لخانات الإدخال، حذف = تنشال)
+function calcSavedTable() {
+  const list = ui.calc.saved || [];
+  if (!list.length) return "";
+  return `<div class="calc-sys"><div class="step"><span>3</span>إجازاته ${ui.calc.dirty ? `<small class="pill warn">تغييرات غير محفوظة — اضغط حفظ أو اعتماد</small>` : `<small class="muted">(${list.length})</small>`}</div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>النوع</th><th>التاريخ / الفترة</th><th class="n">المدة</th><th>الأثر</th><th>ملاحظة</th><th></th></tr></thead>
+    <tbody>${list.map((r, i) => { const x = calcRowText(r); return `<tr><td class="mono">${i + 1}</td><td>${esc(typeName(r.type))}</td><td>${x.when}</td><td class="n">${x.amount}</td><td>${x.effect}</td><td>${esc(r.note || "")}</td>
+      <td class="act"><button type="button" class="icon-btn" data-act="calc-edit-saved" data-id="${i}" title="تعديل"><i data-lucide="pencil"></i></button><button type="button" class="icon-btn del" data-act="calc-del-saved" data-id="${i}" title="حذف"><i data-lucide="trash-2"></i></button></td></tr>`; }).join("")}</tbody></table></div></div>`;
+}
+function redrawCalcLists() { $("#calcRows").innerHTML = calcRows(); const sv = $("#calcSaved"); if (sv) sv.innerHTML = calcSavedTable(); icons(); refreshCalc(); }
+
 // جدول إجازات المنتسب المسجلة بالنظام (للاطلاع — تنحسب وحدها)
 function calcSystemTable() {
   const c = ui.calc;
   if (!c.empId) return "";
   const list = systemLeavesFor(c.empId, c.start, c.asOf).list;
   if (!list.length) return "";
-  return `<div class="calc-sys"><div class="step"><span>3</span>إجازاته المسجلة بالنظام <small class="muted">(تنحسب وحدها — تتغير عن طريق السحب)</small></div>
+  return `<div class="calc-sys"><div class="step"><span>4</span>إجازاته المسجلة بالنظام <small class="muted">(تنحسب وحدها — تتغير عن طريق السحب)</small></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>الرقم</th><th>النوع</th><th>الفترة</th><th class="n">المدة</th><th>الأثر</th><th></th></tr></thead>
     <tbody>${list.map((r) => `<tr><td class="mono">${esc(r.serial)}</td><td>${esc(r.typeName)}</td><td>${fmtDate(r.startDate)}${r.endDate && r.endDate !== r.startDate ? " ← " + fmtDate(r.endDate) : ""}</td>
       <td class="n">${r.unit === "hour" ? num(r.hours) + " س" : num(r.total)}</td>
@@ -653,7 +687,7 @@ function systemLeavesFor(empId, start, asOf) {
 
 // منتسب أُضيف قبل ميزة حفظ الإجازات: ما عنده أسطر محفوظة، فنوضح الفرق ونعرض تعبئته بسطر واحد
 function calcGap() {
-  const e = empById(ui.calc.empId); if (!e || e.calc?.rows?.length) return null;
+  const e = empById(ui.calc.empId); if (!e || e.calc?.rows?.length || (ui.calc.saved || []).length) return null;
   const blank = ui.calc.rows.every((r) => !r.days && !r.hours && !r.from);
   if (!blank) return null;
   const d = calcData(); if (!d) return null;
@@ -664,11 +698,11 @@ function calcMissingNote() {
   const parts = [g.ord > 0 ? `اعتيادي ${num(g.ord)} يوم` : "", g.sick > 0 ? `مرضي ${num(g.sick)} يوم` : ""].filter(Boolean).join(" و ");
   return `<div class="note warn">ما محفوظ لـ${esc(g.e.name)} تفاصيل إجازات بالحاسبة، لأن انضاف قبل ميزة الحفظ، فالجدول فاضي.
     ${parts ? `<br>الفرق بين المستحق ورصيده الحالي: <b>${parts}</b> (إجازات مأخوذة سابقاً بدون تفاصيل).
-    <br>اكتب إجازاته بالتفصيل واضغط "حفظ الإجازات فقط"، أو
-    <button type="button" class="btn sm" data-act="calc-fill-gap"><i data-lucide="list-plus"></i>أضف الفرق كسطر واحد</button>` : "<br>اكتب إجازاته بالجدول واضغط \"حفظ الإجازات فقط\"."}</div>`;
+    <br>اكتب إجازاته بالتفصيل وأضفها للجدول، أو
+    <button type="button" class="btn sm" data-act="calc-fill-gap"><i data-lucide="list-plus"></i>أضف الفرق كسطر واحد</button>` : "<br>اكتب إجازاته وأضفها للجدول، وبعدين اضغط \"حفظ الإجازات فقط\"."}</div>`;
 }
 function calcData() {
-  const c = ui.calc, rows = c.rows;
+  const c = ui.calc, rows = allCalcRows();
   const sys = systemLeavesFor(c.empId, c.start, c.asOf);
   const periods = rows.filter((r) => CALC_TYPES[r.type]?.effect === "pause").map((r) => ({ from: r.from, to: r.to })).concat(sys.periods);
   const absRows = rows.filter((r) => r.type === "absence");
@@ -728,7 +762,7 @@ function calcResult() {
 // ما ينحفظ على سجل المنتسب: تاريخ المباشرة، الإجازات المدخلة، وملخص النتيجة
 function calcSnapshot(d) {
   const c = ui.calc;
-  const rows = c.rows.filter((r) => r.days || r.hours || (r.from && r.to) || (r.type === "absence" && r.days))
+  const rows = allCalcRows()
     .map((r) => ({ type: r.type, from: r.from || "", to: r.to || "", days: r.days || "", hours: r.hours || "", note: r.note || "", mode: r.mode || "pause" }));
   return { start: c.start, asOf: c.asOf, category: c.category, rows,
     result: { ordinary: d.ordinary, taken: d.taken, paused: d.paused, balance: Math.max(0, d.final), sick: d.sick, sickTaken: d.sickTaken, sickLeft: Math.max(0, d.sickLeft) } };
@@ -1025,29 +1059,44 @@ document.addEventListener("click", async (ev) => {
         const rows = [];
         if (g.ord > 0) rows.push({ ...newCalcRow("ordinary"), days: String(g.ord), note: "إجازات سابقة غير مفصلة" });
         if (g.sick > 0) rows.push({ ...newCalcRow("sick"), days: String(g.sick), note: "إجازات مرضية سابقة غير مفصلة" });
-        ui.calc.rows = rows; render(); toast("انضاف الفرق — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
+        ui.calc.saved = rows; ui.calc.dirty = true; render(); toast("انضاف الفرق للجدول — اضغط \"حفظ الإجازات فقط\" حتى ينحفظ"); break;
+      }
+      case "calc-commit": { const n = commitDrafts(); if (!n) { toast("اكتب تفاصيل الإجازة أولاً", "bad"); break; } redrawCalcLists(); toast(n > 1 ? `انضافت ${n} إجازات للجدول` : "انضافت الإجازة للجدول"); break; }
+      case "calc-edit-saved": {
+        const [r] = ui.calc.saved.splice(Number(id), 1);
+        const blank = ui.calc.rows.filter(filledRow);
+        ui.calc.rows = blank.concat([{ ...r }]); ui.calc.dirty = true;
+        redrawCalcLists(); $("#calcRows .calc-row:last-child [data-k=type]")?.focus(); toast("رجعت الإجازة لخانات الإدخال — عدّلها واضغط أضف للجدول"); break;
+      }
+      case "calc-del-saved": {
+        const r = ui.calc.saved[Number(id)];
+        if (!confirm(`حذف الإجازة رقم ${Number(id) + 1} (${typeName(r.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ أو اعتماد.`)) break;
+        ui.calc.saved.splice(Number(id), 1); ui.calc.dirty = true; redrawCalcLists(); break;
       }
       case "calc-add-row": ui.calc.rows.push(newCalcRow(v || "ordinary")); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
-      case "calc-del-row": { const rr = ui.calc.rows[Number(id)]; if ((rr.days || rr.hours || rr.from || rr.note) && !confirm(`حذف الإجازة رقم ${Number(id) + 1} (${typeName(rr.type)})؟\nتنحذف نهائياً بعد ما تضغط حفظ أو اعتماد.`)) break; }
+      case "calc-del-row": { const rr = ui.calc.rows[Number(id)]; if ((rr.days || rr.hours || rr.from || rr.note) && !confirm(`مسح هذا السطر (${typeName(rr.type)})؟`)) break; }
         ui.calc.rows.splice(Number(id), 1); if (!ui.calc.rows.length) ui.calc.rows.push(newCalcRow()); $("#calcRows").innerHTML = calcRows(); icons(); refreshCalc(); break;
       case "calc-apply": {
+        commitDrafts();
         const d = calcData(), e = empById(ui.calc.empId);
         const nb = Math.max(0, d.final), ns = Math.max(0, d.sickLeft);
         const dB = round2(nb - (e.balance || 0)), dS = round2(ns - (e.sick || 0));
-        if (!dB && !dS) { await store.saveCalc(e.id, calcSnapshot(d)); toast("الرصيد مطابق — انحفظت تفاصيل الإجازات"); break; }
+        if (!dB && !dS) { await store.saveCalc(e.id, calcSnapshot(d)); ui.calc.dirty = false; redrawCalcLists(); toast("الرصيد مطابق — انحفظت تفاصيل الإجازات"); break; }
         if (!confirm(`تحديد رصيد ${e.name}:\nالاعتيادي ${nb} يوم (بدل ${num(e.balance)})\nالمرضي ${ns} يوم (بدل ${num(e.sick || 0)})\nينسجل بحركة الرصيد.`)) break;
         const why = `احتساب من تاريخ المباشرة ${fmtDate(ui.calc.start)}${d.paused ? ` (موقوف ${d.paused} يوم)` : ""}`;
         if (dB) await store.adjustBalance(e.id, "balance", dB, `${why}: مستحق ${d.ordinary} − مأخوذ ${d.taken}`);
         if (dS) await store.adjustBalance(e.id, "sick", dS, `${why}: مرضي مستحق ${d.sick} − مأخوذ ${d.sickTaken}`);
-        await store.saveCalc(e.id, calcSnapshot(d));
-        toast("تم اعتماد الرصيد وحفظ تفاصيل الإجازات"); refreshCalc(); break;
+        await store.saveCalc(e.id, calcSnapshot(d)); ui.calc.dirty = false;
+        toast("تم اعتماد الرصيد وحفظ تفاصيل الإجازات"); redrawCalcLists(); break;
       }
       case "calc-save": {
+        commitDrafts();
         const e = empById(ui.calc.empId), d = calcData();
-        await store.saveCalc(e.id, calcSnapshot(d));
+        await store.saveCalc(e.id, calcSnapshot(d)); ui.calc.dirty = false; redrawCalcLists();
         toast(`انحفظت تفاصيل إجازات ${e.name}`); break;
       }
       case "calc-add-emp": {
+        commitDrafts();
         const c = ui.calc, d = calcData();
         if (!c.name.trim()) { toast("اكتب اسم المنتسب أولاً", "bad"); $("#calcForm [name=name]")?.focus(); break; }
         if (S().employees.some((x) => x.name.trim() === c.name.trim())) { if (!confirm("يوجد منتسب بنفس الاسم. تضيفه رغم ذلك؟")) break; }
@@ -1056,7 +1105,7 @@ document.addEventListener("click", async (ev) => {
           notes: `مباشرة ${fmtDate(c.start)} — الرصيد محسوب بالحاسبة${d.paused ? `، موقوف ${d.paused} يوم` : ""}`,
           balance: Math.max(0, d.final), sick: Math.max(0, d.sickLeft) });
         toast(`تمت إضافة ${c.name}`);
-        ui.calc = { empId: "", category: c.category, start: "", asOf: today(), name: "", title: "", department: "", empNo: "", rows: [newCalcRow()] };
+        ui.calc = { empId: "", category: c.category, start: "", asOf: today(), name: "", title: "", department: "", empNo: "", saved: [], rows: [newCalcRow()] };
         render(); break;
       }
       case "add-emp": employeeModal(); break;
@@ -1116,7 +1165,7 @@ document.addEventListener("change", async (ev) => {
   const t = ev.target;
   if (t.name === "empId" && t.closest("#calcForm")) {
     const e = empById(t.value);
-    if (e) loadCalcFor(e); else { ui.calc.empId = ""; }
+    if (e) loadCalcFor(e); else { ui.calc.empId = ""; ui.calc.saved = []; ui.calc.dirty = false; }
     render();
   }
   if (t.dataset.f) { ui.reqFilter[t.dataset.f] = t.value; $("#reqTable").innerHTML = requestsTable(filteredRequests()); icons(); }
