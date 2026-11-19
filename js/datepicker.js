@@ -40,6 +40,15 @@ function mask(raw, deleting) {
   return { out, parts };
 }
 
+// التقويم فوق الخانة بمسافة واضحة (والخانة تبقى ظاهرة)، وإذا ماكو مكان فوق يطلع تحتها
+function placeCal(inst) {
+  if (window.matchMedia("(max-width: 600px)").matches) return;   // الموبايل: ورقة أسفل الشاشة
+  requestAnimationFrame(() => {
+    const cal = inst.calendarContainer, r = (inst.altInput || inst.input).getBoundingClientRect(), h = cal.offsetHeight, gap = 10;
+    const top = r.top - h - gap >= 8 ? r.top - h - gap : r.bottom + gap;
+    cal.style.top = `${top + window.scrollY}px`;
+  });
+}
 function enhance(el) {
   if (!window.flatpickr || el._flatpickr || el.dataset.noPicker) return;
   window.flatpickr(el, {
@@ -56,11 +65,9 @@ function enhance(el) {
     parseDate: (s) => { const v = parseLooseDate(s); return v ? new Date(v + "T00:00:00") : undefined; },
     onDayCreate: (_, __, ___, day) => { const d = day.dateObj.getDay(); if (d === 5 || d === 6) day.classList.add("weekend"); },
     onChange: (_, __, inst) => inst.input.dispatchEvent(new Event("input", { bubbles: true })),
-    onOpen: (_, __, inst) => {
-      // إذا ماكو مكان كافي فوق، يطلع تحت
-      const r = (inst.altInput || inst.input).getBoundingClientRect();
-      inst.set("position", r.top > inst.calendarContainer.offsetHeight + 16 ? "above" : "below");
-    },
+    onOpen: (_, __, inst) => placeCal(inst),
+    onMonthChange: (_, __, inst) => placeCal(inst),
+    onYearChange: (_, __, inst) => placeCal(inst),
     onReady: (_, __, inst) => {
       const alt = inst.altInput;
       if (alt) {
